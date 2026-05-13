@@ -30,4 +30,4 @@ server:
 
 logging:
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%X{traceId:-}] %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [corr=%X{correlationId:-} tenant=%X{tenantId:-} workspace=%X{workspaceId:-} user=%X{userId:-}] %logger{36} - %msg%n"

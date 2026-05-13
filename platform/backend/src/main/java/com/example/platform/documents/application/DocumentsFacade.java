@@ -1,10 +1,12 @@
 package com.example.platform.documents.application;
 
+import com.example.platform.common.audit.AuditLogger;
 import com.example.platform.documents.domain.DocumentCommentEntity;
 import com.example.platform.documents.domain.DocumentEntity;
 import com.example.platform.documents.domain.DocumentStatus;
 import com.example.platform.documents.infrastructure.DocumentCommentRepository;
 import com.example.platform.documents.infrastructure.DocumentRepository;
+import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import java.text.Normalizer;
 import java.util.List;
@@ -19,21 +21,23 @@ public class DocumentsFacade {
     private final DocumentRepository documentRepository;
     private final DocumentCommentRepository documentCommentRepository;
     private final MembershipRepository membershipRepository;
+    private final AuditLogger auditLogger;
 
     public DocumentsFacade(
             DocumentRepository documentRepository,
             DocumentCommentRepository documentCommentRepository,
-            MembershipRepository membershipRepository
+            MembershipRepository membershipRepository,
+            AuditLogger auditLogger
     ) {
         this.documentRepository = documentRepository;
         this.documentCommentRepository = documentCommentRepository;
         this.membershipRepository = membershipRepository;
+        this.auditLogger = auditLogger;
     }
 
     @Transactional
     public DocumentView createDocument(String workspaceId, String userId, String title, String content) {
-        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
+        var membership = requireActiveMembership(workspaceId, userId);
         DocumentEntity saved = documentRepository.save(new DocumentEntity(
                 "document-" + slugify(title) + "-" + UUID.randomUUID().toString().substring(0, 8),
                 membership.getTenantId(),
@@ -44,6 +48,7 @@ public class DocumentsFacade {
                 userId,
                 userId
         ));
+        auditLogger.logWrite("documents", "create", "document", saved.getDocumentId(), "SUCCESS");
         return toDocumentView(saved);
     }
 
@@ -63,9 +68,9 @@ public class DocumentsFacade {
     public DocumentView updateDocument(String documentId, String userId, String title, String content) {
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
-        membershipRepository.findByWorkspaceIdAndUserId(document.getWorkspaceId(), userId)
-                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + document.getWorkspaceId()));
+        requireActiveMembership(document.getWorkspaceId(), userId);
         document.update(title, content, userId);
+        auditLogger.logWrite("documents", "update", "document", document.getDocumentId(), "SUCCESS");
         return toDocumentView(document);
     }
 
@@ -73,14 +78,14 @@ public class DocumentsFacade {
     public DocumentCommentView addComment(String documentId, String userId, String body) {
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
-        membershipRepository.findByWorkspaceIdAndUserId(document.getWorkspaceId(), userId)
-                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + document.getWorkspaceId()));
+        requireActiveMembership(document.getWorkspaceId(), userId);
         DocumentCommentEntity saved = documentCommentRepository.save(new DocumentCommentEntity(
                 "comment-" + UUID.randomUUID(),
                 documentId,
                 userId,
                 body
         ));
+        auditLogger.logWrite("documents", "comment", "document", documentId, "SUCCESS");
         return new DocumentCommentView(saved.getCommentId(), saved.getDocumentId(), saved.getAuthorUserId(), saved.getBody());
     }
 
@@ -106,5 +111,14 @@ public class DocumentsFacade {
         return normalized.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("(^-|-$)", "");
+    }
+
+    private com.example.platform.identityaccess.domain.MembershipEntity requireActiveMembership(String workspaceId, String userId) {
+        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
+        if (membership.getStatus() != MembershipStatus.ACTIVE) {
+            throw new IllegalStateException("Membership is not active for user " + userId);
+        }
+        return membership;
     }
 }

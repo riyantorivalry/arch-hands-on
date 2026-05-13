@@ -1,5 +1,6 @@
 package com.example.platform.common.api;
 
+import com.example.platform.common.web.AuthenticationRequiredException;
 import java.time.Instant;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -20,6 +21,12 @@ public class ApiExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     public ErrorResponse handleIllegalState(IllegalStateException exception) {
         return new ErrorResponse("CONFLICT", exception.getMessage(), Instant.now());
+    }
+
+    @ExceptionHandler(AuthenticationRequiredException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public ErrorResponse handleAuthenticationRequired(AuthenticationRequiredException exception) {
+        return new ErrorResponse("UNAUTHORIZED", exception.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

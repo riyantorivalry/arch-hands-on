@@ -25,7 +25,6 @@ public class TenantManagementFacade {
     private final WorkspaceRepository workspaceRepository;
     private final UserRepository userRepository;
     private final MembershipRepository membershipRepository;
-
     public TenantManagementFacade(
             TenantRepository tenantRepository,
             WorkspaceRepository workspaceRepository,

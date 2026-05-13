@@ -29,7 +29,13 @@ public class TasksController {
             @PathVariable String workspaceId,
             @RequestBody CreateTaskRequest request
     ) {
-        return facade.createTask(workspaceId, request.title());
+        return facade.createTask(
+                workspaceId,
+                RequestContexts.current().userId(),
+                request.title(),
+                request.description(),
+                request.assigneeUserId()
+        );
     }
 
     @GetMapping("/workspaces/{workspaceId}/tasks")
@@ -43,8 +49,18 @@ public class TasksController {
     }
 
     @PatchMapping("/tasks/{taskId}")
-    public TasksFacade.TaskView updateTask(@PathVariable String taskId) {
-        return facade.updateTask(taskId);
+    public TasksFacade.TaskView updateTask(
+            @PathVariable String taskId,
+            @RequestBody UpdateTaskRequest request
+    ) {
+        return facade.updateTask(
+                taskId,
+                RequestContexts.current().userId(),
+                request.title(),
+                request.description(),
+                request.status(),
+                request.assigneeUserId()
+        );
     }
 
     @PostMapping("/tasks/{taskId}/comments")
@@ -55,7 +71,19 @@ public class TasksController {
         return facade.addComment(taskId, RequestContexts.current().userId(), request.body());
     }
 
-    public record CreateTaskRequest(@NotBlank String title) {
+    public record CreateTaskRequest(
+            @NotBlank String title,
+            @NotBlank String description,
+            String assigneeUserId
+    ) {
+    }
+
+    public record UpdateTaskRequest(
+            @NotBlank String title,
+            @NotBlank String description,
+            @NotBlank String status,
+            String assigneeUserId
+    ) {
     }
 
     public record AddTaskCommentRequest(@NotBlank String body) {

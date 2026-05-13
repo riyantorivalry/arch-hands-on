@@ -3,6 +3,7 @@ package com.example.platform.identityaccess.api;
 import com.example.platform.common.web.RequestContextResponse;
 import com.example.platform.common.web.RequestContexts;
 import com.example.platform.identityaccess.application.IdentityAccessFacade;
+import com.example.platform.identityaccess.application.SessionAuthenticationService;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,24 +19,34 @@ import org.springframework.web.bind.annotation.RestController;
 public class IdentityAccessController {
 
     private final IdentityAccessFacade facade;
+    private final SessionAuthenticationService sessionAuthenticationService;
 
-    public IdentityAccessController(IdentityAccessFacade facade) {
+    public IdentityAccessController(IdentityAccessFacade facade, SessionAuthenticationService sessionAuthenticationService) {
         this.facade = facade;
+        this.sessionAuthenticationService = sessionAuthenticationService;
     }
 
     @PostMapping("/auth/login")
     public LoginResponse login(@RequestBody LoginRequest request) {
-        return new LoginResponse("stub-token", request.userId(), RequestContextResponse.from(RequestContexts.current()));
+        var session = sessionAuthenticationService.login(request.userId(), request.workspaceId());
+        return new LoginResponse(
+                session.token(),
+                session.userId(),
+                session.tenantId(),
+                session.workspaceId(),
+                session.expiresAt().toString()
+        );
     }
 
     @PostMapping("/auth/logout")
-    public LogoutResponse logout() {
+    public LogoutResponse logout(@org.springframework.web.bind.annotation.RequestHeader("Authorization") String authorization) {
+        sessionAuthenticationService.logout(extractToken(authorization));
         return new LogoutResponse("logged-out");
     }
 
     @GetMapping("/me")
     public MeResponse me() {
-        var context = RequestContexts.current();
+        var context = RequestContexts.authenticated();
         var actor = facade.getCurrentActor(context.workspaceId(), context.userId());
         return new MeResponse(
                 actor.userId(),
@@ -49,15 +60,15 @@ public class IdentityAccessController {
 
     @GetMapping("/workspaces/{workspaceId}/memberships/me")
     public MembershipResponse membership(@PathVariable String workspaceId) {
-        var context = RequestContexts.current();
+        var context = RequestContexts.authenticated();
         var actor = facade.getCurrentActor(workspaceId, context.userId());
         return new MembershipResponse(actor.userId(), actor.workspaceId(), actor.tenantId(), actor.workspaceRole());
     }
 
-    public record LoginRequest(@NotBlank String userId) {
+    public record LoginRequest(@NotBlank String userId, @NotBlank String workspaceId) {
     }
 
-    public record LoginResponse(String token, String userId, RequestContextResponse requestContext) {
+    public record LoginResponse(String token, String userId, String tenantId, String workspaceId, String expiresAt) {
     }
 
     public record LogoutResponse(String status) {
@@ -74,5 +85,12 @@ public class IdentityAccessController {
     }
 
     public record MembershipResponse(String userId, String workspaceId, String tenantId, String role) {
+    }
+
+    private String extractToken(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            throw new com.example.platform.common.web.AuthenticationRequiredException("Bearer token is required");
+        }
+        return authorization.substring("Bearer ".length()).trim();
     }
 }

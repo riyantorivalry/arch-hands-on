@@ -13,12 +13,13 @@ public class PlatformInfoController {
 
     @GetMapping("/info")
     public PlatformInfoResponse info() {
+        var context = RequestContexts.current();
         return new PlatformInfoResponse(
                 "platform-backend",
                 "0.0.1-SNAPSHOT",
                 "modular-monolith",
                 List.of("identity-access", "tenant-management", "messaging", "documents", "tasks"),
-                RequestContextResponse.from(RequestContexts.current())
+                context.isAuthenticated() ? RequestContextResponse.from(context) : null
         );
     }
 

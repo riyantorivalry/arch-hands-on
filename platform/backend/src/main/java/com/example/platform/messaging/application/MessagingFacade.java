@@ -1,5 +1,7 @@
 package com.example.platform.messaging.application;
 
+import com.example.platform.common.audit.AuditLogger;
+import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import com.example.platform.messaging.domain.ChannelEntity;
 import com.example.platform.messaging.domain.MessageEntity;
@@ -20,23 +22,25 @@ public class MessagingFacade {
     private final MessageRepository messageRepository;
     private final MembershipRepository membershipRepository;
     private final WorkspaceRepository workspaceRepository;
+    private final AuditLogger auditLogger;
 
     public MessagingFacade(
             ChannelRepository channelRepository,
             MessageRepository messageRepository,
             MembershipRepository membershipRepository,
-            WorkspaceRepository workspaceRepository
+            WorkspaceRepository workspaceRepository,
+            AuditLogger auditLogger
     ) {
         this.channelRepository = channelRepository;
         this.messageRepository = messageRepository;
         this.membershipRepository = membershipRepository;
         this.workspaceRepository = workspaceRepository;
+        this.auditLogger = auditLogger;
     }
 
     @Transactional
     public ChannelView createChannel(String workspaceId, String actorUserId, String channelName) {
-        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, actorUserId)
-                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
+        var membership = requireActiveMembership(workspaceId, actorUserId);
         var workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
         ChannelEntity channel = channelRepository.save(new ChannelEntity(
@@ -45,6 +49,7 @@ public class MessagingFacade {
                 workspace.getWorkspaceId(),
                 channelName
         ));
+        auditLogger.logWrite("messaging", "create", "channel", channel.getChannelId(), "SUCCESS");
         return toChannelView(channel);
     }
 
@@ -56,8 +61,7 @@ public class MessagingFacade {
 
     @Transactional
     public MessageView postMessage(String workspaceId, String channelId, String authorUserId, String body) {
-        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, authorUserId)
-                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
+        var membership = requireActiveMembership(workspaceId, authorUserId);
         var channel = channelRepository.findByChannelIdAndWorkspaceId(channelId, workspaceId)
                 .orElseThrow(() -> new IllegalArgumentException("Channel not found in workspace " + workspaceId));
         MessageEntity saved = messageRepository.save(new MessageEntity(
@@ -69,6 +73,7 @@ public class MessagingFacade {
                 body,
                 null
         ));
+        auditLogger.logWrite("messaging", "create", "message", saved.getMessageId(), "SUCCESS");
         return toMessageView(saved);
     }
 
@@ -80,8 +85,7 @@ public class MessagingFacade {
 
     @Transactional
     public MessageView replyToMessage(String workspaceId, String messageId, String authorUserId, String body) {
-        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, authorUserId)
-                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
+        var membership = requireActiveMembership(workspaceId, authorUserId);
         var parent = messageRepository.findById(messageId)
                 .orElseThrow(() -> new IllegalArgumentException("Parent message not found: " + messageId));
         MessageEntity saved = messageRepository.save(new MessageEntity(
@@ -93,6 +97,7 @@ public class MessagingFacade {
                 body,
                 parent.getMessageId()
         ));
+        auditLogger.logWrite("messaging", "reply", "message", saved.getMessageId(), "SUCCESS");
         return toMessageView(saved);
     }
 
@@ -122,5 +127,14 @@ public class MessagingFacade {
         return normalized.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("(^-|-$)", "");
+    }
+
+    private com.example.platform.identityaccess.domain.MembershipEntity requireActiveMembership(String workspaceId, String userId) {
+        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
+        if (membership.getStatus() != MembershipStatus.ACTIVE) {
+            throw new IllegalStateException("Membership is not active for user " + userId);
+        }
+        return membership;
     }
 }
