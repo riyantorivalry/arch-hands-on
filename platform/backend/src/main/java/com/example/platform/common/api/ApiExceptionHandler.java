@@ -1,6 +1,7 @@
 package com.example.platform.common.api;
 
 import com.example.platform.common.web.AuthenticationRequiredException;
+import com.example.platform.common.web.AuthorizationDeniedException;
 import java.time.Instant;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -27,6 +28,12 @@ public class ApiExceptionHandler {
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public ErrorResponse handleAuthenticationRequired(AuthenticationRequiredException exception) {
         return new ErrorResponse("UNAUTHORIZED", exception.getMessage(), Instant.now());
+    }
+
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ErrorResponse handleAuthorizationDenied(AuthorizationDeniedException exception) {
+        return new ErrorResponse("FORBIDDEN", exception.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

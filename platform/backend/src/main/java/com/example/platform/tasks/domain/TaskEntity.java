@@ -93,6 +93,10 @@ public class TaskEntity extends AbstractAuditableEntity {
         return assigneeUserId;
     }
 
+    public String getCreatedByUserId() {
+        return createdByUserId;
+    }
+
     public void update(String title, String description, TaskStatus status, String assigneeUserId, String modifiedByUserId) {
         this.title = title;
         this.description = description;

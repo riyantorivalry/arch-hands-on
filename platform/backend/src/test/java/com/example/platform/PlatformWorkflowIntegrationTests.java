@@ -54,6 +54,36 @@ class PlatformWorkflowIntegrationTests {
 
         String token = JsonFieldExtractor.read(loginPayload, "token");
 
+        mockMvc.perform(post("/api/workspaces/workspace-engineering/memberships")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userId": "user-bob",
+                                  "email": "bob@example.com",
+                                  "displayName": "Bob",
+                                  "role": "MEMBER"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value("user-bob"))
+                .andExpect(jsonPath("$.role").value("MEMBER"));
+
+        String memberLoginPayload = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userId": "user-bob",
+                                  "workspaceId": "workspace-engineering"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String memberToken = JsonFieldExtractor.read(memberLoginPayload, "token");
+
         mockMvc.perform(get("/api/me")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
@@ -71,6 +101,16 @@ class PlatformWorkflowIntegrationTests {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.channelId").value("channel-general"));
+
+        mockMvc.perform(post("/api/workspaces/workspace-engineering/channels")
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "restricted"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/channels/channel-general/messages")
                         .header("Authorization", "Bearer " + token)
@@ -126,6 +166,17 @@ class PlatformWorkflowIntegrationTests {
                 .andExpect(jsonPath("$[0].documentId").value(persistedDocumentId))
                 .andExpect(jsonPath("$[0].title").value("Architecture Notes"));
 
+        mockMvc.perform(patch("/api/documents/" + persistedDocumentId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Changed By Member",
+                                  "content": "Not allowed"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
         String taskPayload = mockMvc.perform(post("/api/workspaces/workspace-engineering/tasks")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -177,6 +228,49 @@ class PlatformWorkflowIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].taskId").value(taskId))
                 .andExpect(jsonPath("$[0].status").value("IN_PROGRESS"));
+
+        String memberTaskPayload = mockMvc.perform(post("/api/workspaces/workspace-engineering/tasks")
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Member Task",
+                                  "description": "Owned by member",
+                                  "assigneeUserId": "user-bob"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String memberTaskId = JsonFieldExtractor.read(memberTaskPayload, "taskId");
+
+        mockMvc.perform(patch("/api/tasks/" + memberTaskId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Owner Override",
+                                  "description": "Allowed",
+                                  "status": "DONE",
+                                  "assigneeUserId": "user-bob"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/tasks/" + taskId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Member Override",
+                                  "description": "Not allowed",
+                                  "status": "DONE",
+                                  "assigneeUserId": "user-alice"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/auth/logout")
                         .header("Authorization", "Bearer " + token))

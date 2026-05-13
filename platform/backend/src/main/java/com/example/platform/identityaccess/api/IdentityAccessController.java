@@ -65,6 +65,22 @@ public class IdentityAccessController {
         return new MembershipResponse(actor.userId(), actor.workspaceId(), actor.tenantId(), actor.workspaceRole());
     }
 
+    @PostMapping("/workspaces/{workspaceId}/memberships")
+    public IdentityAccessFacade.MembershipAssignmentView assignMembership(
+            @PathVariable String workspaceId,
+            @RequestBody AssignMembershipRequest request
+    ) {
+        var context = RequestContexts.authenticated();
+        return facade.assignMembership(
+                context.userId(),
+                workspaceId,
+                request.userId(),
+                request.email(),
+                request.displayName(),
+                request.role()
+        );
+    }
+
     public record LoginRequest(@NotBlank String userId, @NotBlank String workspaceId) {
     }
 
@@ -85,6 +101,14 @@ public class IdentityAccessController {
     }
 
     public record MembershipResponse(String userId, String workspaceId, String tenantId, String role) {
+    }
+
+    public record AssignMembershipRequest(
+            @NotBlank String userId,
+            @NotBlank String email,
+            @NotBlank String displayName,
+            @NotBlank String role
+    ) {
     }
 
     private String extractToken(String authorization) {

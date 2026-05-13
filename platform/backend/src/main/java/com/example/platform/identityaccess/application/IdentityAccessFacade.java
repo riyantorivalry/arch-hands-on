@@ -2,6 +2,7 @@ package com.example.platform.identityaccess.application;
 
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import com.example.platform.identityaccess.infrastructure.UserRepository;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -30,6 +31,54 @@ public class IdentityAccessFacade {
         );
     }
 
+    @Transactional
+    public MembershipAssignmentView assignMembership(
+            String actorUserId,
+            String workspaceId,
+            String userId,
+            String email,
+            String displayName,
+            String role
+    ) {
+        var actorMembership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, actorUserId)
+                .orElseThrow(() -> new IllegalArgumentException("Membership not found for actor in workspace " + workspaceId));
+        if (actorMembership.getStatus() != com.example.platform.identityaccess.domain.MembershipStatus.ACTIVE) {
+            throw new IllegalStateException("Actor membership is not active");
+        }
+        if (actorMembership.getRole() != com.example.platform.identityaccess.domain.MembershipRole.OWNER
+                && actorMembership.getRole() != com.example.platform.identityaccess.domain.MembershipRole.ADMIN) {
+            throw new com.example.platform.common.web.AuthorizationDeniedException("Workspace manager role is required");
+        }
+
+        var user = userRepository.findById(userId)
+                .orElseGet(() -> userRepository.save(
+                        new com.example.platform.identityaccess.domain.UserEntity(
+                                userId,
+                                email,
+                                displayName,
+                                com.example.platform.identityaccess.domain.UserStatus.ACTIVE
+                        )
+                ));
+        var assignedRole = com.example.platform.identityaccess.domain.MembershipRole.valueOf(role);
+        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                .orElseGet(() -> membershipRepository.save(
+                        new com.example.platform.identityaccess.domain.MembershipEntity(
+                                actorMembership.getTenantId(),
+                                workspaceId,
+                                user.getUserId(),
+                                assignedRole,
+                                com.example.platform.identityaccess.domain.MembershipStatus.ACTIVE
+                        )
+                ));
+        return new MembershipAssignmentView(
+                membership.getTenantId(),
+                membership.getWorkspaceId(),
+                membership.getUserId(),
+                membership.getRole().name(),
+                membership.getStatus().name()
+        );
+    }
+
     public record CurrentActorView(
             String userId,
             String displayName,
@@ -37,6 +86,15 @@ public class IdentityAccessFacade {
             String workspaceId,
             String tenantId,
             String workspaceRole
+    ) {
+    }
+
+    public record MembershipAssignmentView(
+            String tenantId,
+            String workspaceId,
+            String userId,
+            String role,
+            String status
     ) {
     }
 }

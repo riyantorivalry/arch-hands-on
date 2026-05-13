@@ -1,6 +1,7 @@
 package com.example.platform.messaging.application;
 
 import com.example.platform.common.audit.AuditLogger;
+import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import com.example.platform.messaging.domain.ChannelEntity;
@@ -23,24 +24,28 @@ public class MessagingFacade {
     private final MembershipRepository membershipRepository;
     private final WorkspaceRepository workspaceRepository;
     private final AuditLogger auditLogger;
+    private final AuthorizationService authorizationService;
 
     public MessagingFacade(
             ChannelRepository channelRepository,
             MessageRepository messageRepository,
             MembershipRepository membershipRepository,
             WorkspaceRepository workspaceRepository,
-            AuditLogger auditLogger
+            AuditLogger auditLogger,
+            AuthorizationService authorizationService
     ) {
         this.channelRepository = channelRepository;
         this.messageRepository = messageRepository;
         this.membershipRepository = membershipRepository;
         this.workspaceRepository = workspaceRepository;
         this.auditLogger = auditLogger;
+        this.authorizationService = authorizationService;
     }
 
     @Transactional
     public ChannelView createChannel(String workspaceId, String actorUserId, String channelName) {
         var membership = requireActiveMembership(workspaceId, actorUserId);
+        authorizationService.requireWorkspaceManager(membership);
         var workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
         ChannelEntity channel = channelRepository.save(new ChannelEntity(

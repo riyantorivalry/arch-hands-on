@@ -1,6 +1,7 @@
 package com.example.platform.tasks.application;
 
 import com.example.platform.common.audit.AuditLogger;
+import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import com.example.platform.tasks.domain.TaskCommentEntity;
@@ -22,17 +23,20 @@ public class TasksFacade {
     private final TaskCommentRepository taskCommentRepository;
     private final MembershipRepository membershipRepository;
     private final AuditLogger auditLogger;
+    private final AuthorizationService authorizationService;
 
     public TasksFacade(
             TaskRepository taskRepository,
             TaskCommentRepository taskCommentRepository,
             MembershipRepository membershipRepository,
-            AuditLogger auditLogger
+            AuditLogger auditLogger,
+            AuthorizationService authorizationService
     ) {
         this.taskRepository = taskRepository;
         this.taskCommentRepository = taskCommentRepository;
         this.membershipRepository = membershipRepository;
         this.auditLogger = auditLogger;
+        this.authorizationService = authorizationService;
     }
 
     @Transactional
@@ -73,7 +77,8 @@ public class TasksFacade {
     public TaskView updateTask(String taskId, String userId, String title, String description, String status, String assigneeUserId) {
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
-        requireActiveMembership(task.getWorkspaceId(), userId);
+        var membership = requireActiveMembership(task.getWorkspaceId(), userId);
+        authorizationService.requireOwnerOrAdminOrAssignee(membership, task.getCreatedByUserId(), task.getAssigneeUserId());
         if (assigneeUserId != null && !assigneeUserId.isBlank()) {
             requireActiveMembership(task.getWorkspaceId(), assigneeUserId);
         }

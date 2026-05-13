@@ -1,6 +1,7 @@
 package com.example.platform.documents.application;
 
 import com.example.platform.common.audit.AuditLogger;
+import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.documents.domain.DocumentCommentEntity;
 import com.example.platform.documents.domain.DocumentEntity;
 import com.example.platform.documents.domain.DocumentStatus;
@@ -22,17 +23,20 @@ public class DocumentsFacade {
     private final DocumentCommentRepository documentCommentRepository;
     private final MembershipRepository membershipRepository;
     private final AuditLogger auditLogger;
+    private final AuthorizationService authorizationService;
 
     public DocumentsFacade(
             DocumentRepository documentRepository,
             DocumentCommentRepository documentCommentRepository,
             MembershipRepository membershipRepository,
-            AuditLogger auditLogger
+            AuditLogger auditLogger,
+            AuthorizationService authorizationService
     ) {
         this.documentRepository = documentRepository;
         this.documentCommentRepository = documentCommentRepository;
         this.membershipRepository = membershipRepository;
         this.auditLogger = auditLogger;
+        this.authorizationService = authorizationService;
     }
 
     @Transactional
@@ -68,7 +72,8 @@ public class DocumentsFacade {
     public DocumentView updateDocument(String documentId, String userId, String title, String content) {
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
-        requireActiveMembership(document.getWorkspaceId(), userId);
+        var membership = requireActiveMembership(document.getWorkspaceId(), userId);
+        authorizationService.requireOwnerOrAdminOrResourceOwner(membership, document.getCreatedByUserId());
         document.update(title, content, userId);
         auditLogger.logWrite("documents", "update", "document", document.getDocumentId(), "SUCCESS");
         return toDocumentView(document);
