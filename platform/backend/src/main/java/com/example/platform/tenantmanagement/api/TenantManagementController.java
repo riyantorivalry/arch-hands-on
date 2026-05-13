@@ -24,7 +24,13 @@ public class TenantManagementController {
 
     @PostMapping("/tenants")
     public TenantManagementFacade.TenantView createTenant(@RequestBody CreateTenantRequest request) {
-        return facade.createTenant(request.tenantName(), request.workspaceName());
+        return facade.createTenant(
+                request.tenantName(),
+                request.workspaceName(),
+                request.ownerUserId(),
+                request.ownerEmail(),
+                request.ownerDisplayName()
+        );
     }
 
     @PostMapping("/tenants/{tenantId}/workspaces")
@@ -50,7 +56,13 @@ public class TenantManagementController {
         return facade.updateWorkspaceSettings(workspaceId);
     }
 
-    public record CreateTenantRequest(@NotBlank String tenantName, @NotBlank String workspaceName) {
+    public record CreateTenantRequest(
+            @NotBlank String tenantName,
+            @NotBlank String workspaceName,
+            @NotBlank String ownerUserId,
+            @NotBlank String ownerEmail,
+            @NotBlank String ownerDisplayName
+    ) {
     }
 
     public record CreateWorkspaceRequest(@NotBlank String workspaceName) {

@@ -37,14 +37,21 @@ public class IdentityAccessController {
     public MeResponse me() {
         var context = RequestContexts.current();
         var actor = facade.getCurrentActor(context.workspaceId(), context.userId());
-        return new MeResponse(actor.userId(), actor.workspaceId(), actor.workspaceRole());
+        return new MeResponse(
+                actor.userId(),
+                actor.displayName(),
+                actor.email(),
+                actor.workspaceId(),
+                actor.tenantId(),
+                actor.workspaceRole()
+        );
     }
 
     @GetMapping("/workspaces/{workspaceId}/memberships/me")
     public MembershipResponse membership(@PathVariable String workspaceId) {
         var context = RequestContexts.current();
         var actor = facade.getCurrentActor(workspaceId, context.userId());
-        return new MembershipResponse(actor.userId(), actor.workspaceId(), actor.workspaceRole());
+        return new MembershipResponse(actor.userId(), actor.workspaceId(), actor.tenantId(), actor.workspaceRole());
     }
 
     public record LoginRequest(@NotBlank String userId) {
@@ -56,9 +63,16 @@ public class IdentityAccessController {
     public record LogoutResponse(String status) {
     }
 
-    public record MeResponse(String userId, String workspaceId, String role) {
+    public record MeResponse(
+            String userId,
+            String displayName,
+            String email,
+            String workspaceId,
+            String tenantId,
+            String role
+    ) {
     }
 
-    public record MembershipResponse(String userId, String workspaceId, String role) {
+    public record MembershipResponse(String userId, String workspaceId, String tenantId, String role) {
     }
 }

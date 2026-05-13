@@ -28,7 +28,7 @@ public class MessagingController {
             @PathVariable String workspaceId,
             @RequestBody CreateChannelRequest request
     ) {
-        return facade.createChannel(workspaceId, request.name());
+        return facade.createChannel(workspaceId, RequestContexts.current().userId(), request.name());
     }
 
     @GetMapping("/workspaces/{workspaceId}/channels")
@@ -41,7 +41,7 @@ public class MessagingController {
             @PathVariable String channelId,
             @RequestBody PostMessageRequest request
     ) {
-        return facade.postMessage(channelId, RequestContexts.current().userId(), request.body());
+        return facade.postMessage(RequestContexts.current().workspaceId(), channelId, RequestContexts.current().userId(), request.body());
     }
 
     @GetMapping("/channels/{channelId}/messages")
@@ -54,7 +54,7 @@ public class MessagingController {
             @PathVariable String messageId,
             @RequestBody PostMessageRequest request
     ) {
-        return facade.replyToMessage(messageId, RequestContexts.current().userId(), request.body());
+        return facade.replyToMessage(RequestContexts.current().workspaceId(), messageId, RequestContexts.current().userId(), request.body());
     }
 
     public record CreateChannelRequest(@NotBlank String name) {
