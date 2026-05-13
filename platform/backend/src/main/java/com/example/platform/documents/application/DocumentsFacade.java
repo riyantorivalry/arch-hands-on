@@ -94,7 +94,15 @@ public class DocumentsFacade {
         return new DocumentCommentView(saved.getCommentId(), saved.getDocumentId(), saved.getAuthorUserId(), saved.getBody());
     }
 
-    public record DocumentView(String documentId, String workspaceId, String title, String content, String status) {
+    public record DocumentView(
+            String documentId,
+            String workspaceId,
+            String title,
+            String content,
+            String status,
+            String createdByUserId,
+            String lastModifiedByUserId
+    ) {
     }
 
     public record DocumentCommentView(String commentId, String documentId, String authorUserId, String body) {
@@ -106,7 +114,9 @@ public class DocumentsFacade {
                 document.getWorkspaceId(),
                 document.getTitle(),
                 document.getContent(),
-                document.getStatus().name()
+                document.getStatus().name(),
+                document.getCreatedByUserId(),
+                document.getLastModifiedByUserId()
         );
     }
 

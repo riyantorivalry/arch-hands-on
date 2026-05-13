@@ -147,8 +147,6 @@ export function AppShell() {
     return currentUser?.role === "OWNER" || currentUser?.role === "ADMIN";
   }, [currentUser]);
 
-  const canUpdateResources = canManageWorkspace;
-
   const selectedDocument = useMemo(
     () => documents.find((item) => item.documentId === selectedDocumentId) ?? null,
     [documents, selectedDocumentId]
@@ -158,6 +156,29 @@ export function AppShell() {
     () => tasks.find((item) => item.taskId === selectedTaskId) ?? null,
     [tasks, selectedTaskId]
   );
+
+  const canUpdateSelectedDocument = useMemo(() => {
+    if (!currentUser || !selectedDocument) {
+      return false;
+    }
+    if (canManageWorkspace) {
+      return true;
+    }
+    return selectedDocument.createdByUserId === currentUser.userId;
+  }, [canManageWorkspace, currentUser, selectedDocument]);
+
+  const canUpdateSelectedTask = useMemo(() => {
+    if (!currentUser || !selectedTask) {
+      return false;
+    }
+    if (canManageWorkspace) {
+      return true;
+    }
+    return (
+      selectedTask.createdByUserId === currentUser.userId ||
+      selectedTask.assigneeUserId === currentUser.userId
+    );
+  }, [canManageWorkspace, currentUser, selectedTask]);
 
   async function refreshWorkspace(activeSession: SessionState) {
     try {
@@ -296,7 +317,7 @@ export function AppShell() {
 
   async function handleUpdateDocument(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!session || !selectedDocument || !canUpdateResources) {
+    if (!session || !selectedDocument || !canUpdateSelectedDocument) {
       return;
     }
     try {
@@ -328,7 +349,7 @@ export function AppShell() {
 
   async function handleUpdateTask(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!session || !selectedTask || !canUpdateResources) {
+    if (!session || !selectedTask || !canUpdateSelectedTask) {
       return;
     }
     try {
@@ -473,7 +494,7 @@ export function AppShell() {
               <form className="form" onSubmit={handleCreateChannel}>
                 <Field label="Channel Name" value={channelName} onChange={setChannelName} />
                 <div className="actions">
-                  <button className="button button-primary" disabled={!canManageWorkspace} type="submit">Create Channel</button>
+                    <button className="button button-primary" disabled={!canManageWorkspace} type="submit">Create Channel</button>
                 </div>
                 {!canManageWorkspace ? <p className="notice">Channel creation requires an owner or admin role.</p> : null}
               </form>
@@ -622,13 +643,13 @@ export function AppShell() {
                     onChange={(value) => setDocumentEditForm({ ...documentEditForm, content: value })}
                   />
                   <div className="actions">
-                    <button className="button button-primary" disabled={!canUpdateResources} type="submit">
+                    <button className="button button-primary" disabled={!canUpdateSelectedDocument} type="submit">
                       Update Document
                     </button>
                   </div>
-                  {!canUpdateResources ? (
+                  {!canUpdateSelectedDocument ? (
                     <p className="notice">
-                      Update actions are currently shown only for owner/admin roles because the backend does not yet expose resource-owner metadata.
+                      Only the document creator, an admin, or the workspace owner can update this document.
                     </p>
                   ) : null}
                 </form>
@@ -666,13 +687,13 @@ export function AppShell() {
                     onChange={(value) => setTaskEditForm({ ...taskEditForm, assigneeUserId: value })}
                   />
                   <div className="actions">
-                    <button className="button button-primary" disabled={!canUpdateResources} type="submit">
+                    <button className="button button-primary" disabled={!canUpdateSelectedTask} type="submit">
                       Update Task
                     </button>
                   </div>
-                  {!canUpdateResources ? (
+                  {!canUpdateSelectedTask ? (
                     <p className="notice">
-                      Task updates are hidden for member roles in this UI until the backend returns per-task ownership metadata for finer client-side authorization.
+                      Only the task creator, assignee, an admin, or the workspace owner can update this task.
                     </p>
                   ) : null}
                 </form>

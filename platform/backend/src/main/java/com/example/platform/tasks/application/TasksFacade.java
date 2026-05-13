@@ -104,7 +104,15 @@ public class TasksFacade {
         return new TaskCommentView(saved.getCommentId(), saved.getTaskId(), saved.getAuthorUserId(), saved.getBody());
     }
 
-    public record TaskView(String taskId, String workspaceId, String title, String description, String status, String assigneeUserId) {
+    public record TaskView(
+            String taskId,
+            String workspaceId,
+            String title,
+            String description,
+            String status,
+            String assigneeUserId,
+            String createdByUserId
+    ) {
     }
 
     public record TaskCommentView(String commentId, String taskId, String authorUserId, String body) {
@@ -126,7 +134,8 @@ public class TasksFacade {
                 task.getTitle(),
                 task.getDescription(),
                 task.getStatus().name(),
-                task.getAssigneeUserId()
+                task.getAssigneeUserId(),
+                task.getCreatedByUserId()
         );
     }
 

@@ -48,6 +48,8 @@ export type DocumentItem = {
   title: string;
   content: string;
   status: string;
+  createdByUserId: string;
+  lastModifiedByUserId: string;
 };
 
 export type TaskItem = {
@@ -57,6 +59,7 @@ export type TaskItem = {
   description: string;
   status: string;
   assigneeUserId: string | null;
+  createdByUserId: string;
 };
 
 export type MembershipAssignment = {
