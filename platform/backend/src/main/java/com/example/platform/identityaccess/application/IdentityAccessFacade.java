@@ -26,7 +26,7 @@ public class IdentityAccessFacade {
                 user.getEmail(),
                 membership.getWorkspaceId(),
                 membership.getTenantId(),
-                membership.getRole()
+                membership.getRole().name()
         );
     }
 

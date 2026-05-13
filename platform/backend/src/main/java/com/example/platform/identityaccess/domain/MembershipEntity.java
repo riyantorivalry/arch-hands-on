@@ -3,6 +3,8 @@ package com.example.platform.identityaccess.domain;
 import com.example.platform.common.domain.AbstractAuditableEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -28,16 +30,18 @@ public class MembershipEntity extends AbstractAuditableEntity {
     @Column(name = "user_id", nullable = false, length = 64)
     private String userId;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 32)
-    private String role;
+    private MembershipRole role;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
-    private String status;
+    private MembershipStatus status;
 
     protected MembershipEntity() {
     }
 
-    public MembershipEntity(String tenantId, String workspaceId, String userId, String role, String status) {
+    public MembershipEntity(String tenantId, String workspaceId, String userId, MembershipRole role, MembershipStatus status) {
         this.tenantId = tenantId;
         this.workspaceId = workspaceId;
         this.userId = userId;
@@ -57,11 +61,11 @@ public class MembershipEntity extends AbstractAuditableEntity {
         return userId;
     }
 
-    public String getRole() {
+    public MembershipRole getRole() {
         return role;
     }
 
-    public String getStatus() {
+    public MembershipStatus getStatus() {
         return status;
     }
 }

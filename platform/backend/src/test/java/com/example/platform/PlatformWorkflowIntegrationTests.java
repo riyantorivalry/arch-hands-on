@@ -77,5 +77,47 @@ class PlatformWorkflowIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].channelId").value("channel-general"))
                 .andExpect(jsonPath("$[0].body").value("Hello team"));
+
+        String documentId = mockMvc.perform(post("/api/workspaces/workspace-engineering/documents")
+                        .header("X-Tenant-Id", "tenant-acme-corp")
+                        .header("X-Workspace-Id", "workspace-engineering")
+                        .header("X-User-Id", "user-alice")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Architecture Notes",
+                                  "content": "Initial collaboration platform notes"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workspaceId").value("workspace-engineering"))
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String persistedDocumentId = JsonFieldExtractor.read(documentId, "documentId");
+
+        mockMvc.perform(post("/api/documents/" + persistedDocumentId + "/comments")
+                        .header("X-Tenant-Id", "tenant-acme-corp")
+                        .header("X-Workspace-Id", "workspace-engineering")
+                        .header("X-User-Id", "user-alice")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "body": "Document comment"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentId").value(persistedDocumentId))
+                .andExpect(jsonPath("$.body").value("Document comment"));
+
+        mockMvc.perform(get("/api/workspaces/workspace-engineering/documents")
+                        .header("X-Tenant-Id", "tenant-acme-corp")
+                        .header("X-Workspace-Id", "workspace-engineering")
+                        .header("X-User-Id", "user-alice"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].documentId").value(persistedDocumentId))
+                .andExpect(jsonPath("$[0].title").value("Architecture Notes"));
     }
 }

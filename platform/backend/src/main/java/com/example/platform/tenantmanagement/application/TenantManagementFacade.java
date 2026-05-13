@@ -1,18 +1,22 @@
 package com.example.platform.tenantmanagement.application;
 
 import com.example.platform.identityaccess.domain.MembershipEntity;
+import com.example.platform.identityaccess.domain.MembershipRole;
+import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.domain.UserEntity;
+import com.example.platform.identityaccess.domain.UserStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import com.example.platform.identityaccess.infrastructure.UserRepository;
 import com.example.platform.tenantmanagement.domain.TenantEntity;
+import com.example.platform.tenantmanagement.domain.TenantStatus;
 import com.example.platform.tenantmanagement.domain.WorkspaceEntity;
+import com.example.platform.tenantmanagement.domain.WorkspaceStatus;
 import com.example.platform.tenantmanagement.infrastructure.TenantRepository;
 import com.example.platform.tenantmanagement.infrastructure.WorkspaceRepository;
 import java.text.Normalizer;
 import java.util.Locale;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.stereotype.Service;
 
 @Service
 public class TenantManagementFacade {
@@ -43,23 +47,23 @@ public class TenantManagementFacade {
             throw new IllegalStateException("Tenant already exists: " + tenantId);
         }
 
-        tenantRepository.save(new TenantEntity(tenantId, tenantName, "ACTIVE", "STANDARD"));
-        workspaceRepository.save(new WorkspaceEntity(workspaceId, tenantId, workspaceName, "ACTIVE"));
+        tenantRepository.save(new TenantEntity(tenantId, tenantName, TenantStatus.ACTIVE, "STANDARD"));
+        workspaceRepository.save(new WorkspaceEntity(workspaceId, tenantId, workspaceName, WorkspaceStatus.ACTIVE));
 
         UserEntity user = userRepository.findById(ownerUserId)
-                .orElseGet(() -> userRepository.save(new UserEntity(ownerUserId, ownerEmail, ownerDisplayName, "ACTIVE")));
+                .orElseGet(() -> userRepository.save(new UserEntity(ownerUserId, ownerEmail, ownerDisplayName, UserStatus.ACTIVE)));
         membershipRepository.findByWorkspaceIdAndUserId(workspaceId, user.getUserId())
                 .orElseGet(() -> membershipRepository.save(
-                        new MembershipEntity(tenantId, workspaceId, user.getUserId(), "OWNER", "ACTIVE")
+                        new MembershipEntity(tenantId, workspaceId, user.getUserId(), MembershipRole.OWNER, MembershipStatus.ACTIVE)
                 ));
 
-        return new TenantView(tenantId, workspaceId, tenantName, workspaceName, "ACTIVE");
+        return new TenantView(tenantId, workspaceId, tenantName, workspaceName, TenantStatus.ACTIVE.name());
     }
 
     public WorkspaceView getWorkspace(String workspaceId) {
         var workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
-        return new WorkspaceView(workspace.getWorkspaceId(), workspace.getTenantId(), workspace.getName(), workspace.getStatus());
+        return new WorkspaceView(workspace.getWorkspaceId(), workspace.getTenantId(), workspace.getName(), workspace.getStatus().name());
     }
 
     public WorkspaceView updateWorkspaceSettings(String workspaceId) {

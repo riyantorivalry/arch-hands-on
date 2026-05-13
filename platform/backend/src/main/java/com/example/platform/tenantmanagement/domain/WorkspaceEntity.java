@@ -3,6 +3,8 @@ package com.example.platform.tenantmanagement.domain;
 import com.example.platform.common.domain.AbstractAuditableEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
@@ -23,13 +25,14 @@ public class WorkspaceEntity extends AbstractAuditableEntity {
     @Column(name = "name", nullable = false, length = 120)
     private String name;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
-    private String status;
+    private WorkspaceStatus status;
 
     protected WorkspaceEntity() {
     }
 
-    public WorkspaceEntity(String workspaceId, String tenantId, String name, String status) {
+    public WorkspaceEntity(String workspaceId, String tenantId, String name, WorkspaceStatus status) {
         this.workspaceId = workspaceId;
         this.tenantId = tenantId;
         this.name = name;
@@ -48,7 +51,7 @@ public class WorkspaceEntity extends AbstractAuditableEntity {
         return name;
     }
 
-    public String getStatus() {
+    public WorkspaceStatus getStatus() {
         return status;
     }
 }

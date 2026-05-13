@@ -29,7 +29,7 @@ public class DocumentsController {
             @PathVariable String workspaceId,
             @RequestBody CreateDocumentRequest request
     ) {
-        return facade.createDocument(workspaceId, request.title());
+        return facade.createDocument(workspaceId, RequestContexts.current().userId(), request.title(), request.content());
     }
 
     @GetMapping("/workspaces/{workspaceId}/documents")
@@ -43,8 +43,11 @@ public class DocumentsController {
     }
 
     @PatchMapping("/documents/{documentId}")
-    public DocumentsFacade.DocumentView updateDocument(@PathVariable String documentId) {
-        return facade.updateDocument(documentId);
+    public DocumentsFacade.DocumentView updateDocument(
+            @PathVariable String documentId,
+            @RequestBody UpdateDocumentRequest request
+    ) {
+        return facade.updateDocument(documentId, RequestContexts.current().userId(), request.title(), request.content());
     }
 
     @PostMapping("/documents/{documentId}/comments")
@@ -55,7 +58,10 @@ public class DocumentsController {
         return facade.addComment(documentId, RequestContexts.current().userId(), request.body());
     }
 
-    public record CreateDocumentRequest(@NotBlank String title) {
+    public record CreateDocumentRequest(@NotBlank String title, @NotBlank String content) {
+    }
+
+    public record UpdateDocumentRequest(@NotBlank String title, @NotBlank String content) {
     }
 
     public record AddCommentRequest(@NotBlank String body) {
