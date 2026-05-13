@@ -1,4 +1,5 @@
 import type {
+  ApiErrorPayload,
   BootstrapTenantRequest,
   Channel,
   DocumentItem,
@@ -19,6 +20,18 @@ type RequestOptions = {
   body?: unknown;
 };
 
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(status: number, message: string, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json"
@@ -36,8 +49,13 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `Request failed: ${response.status}`);
+    const raw = await response.text();
+    const parsed = tryParseApiError(raw);
+    throw new ApiError(
+      response.status,
+      parsed?.message ?? raw ?? `Request failed: ${response.status}`,
+      parsed?.code
+    );
   }
 
   return (await response.json()) as T;
@@ -104,6 +122,14 @@ export async function createDocument(session: SessionState, title: string, conte
   });
 }
 
+export async function updateDocument(session: SessionState, documentId: string, title: string, content: string) {
+  return apiRequest<DocumentItem>(`/documents/${documentId}`, {
+    method: "PATCH",
+    token: session.token,
+    body: { title, content }
+  });
+}
+
 export async function fetchTasks(session: SessionState) {
   return apiRequest<TaskItem[]>(`/workspaces/${session.workspaceId}/tasks`, { token: session.token });
 }
@@ -121,6 +147,26 @@ export async function createTask(
   });
 }
 
+export async function updateTask(
+  session: SessionState,
+  taskId: string,
+  title: string,
+  description: string,
+  status: string,
+  assigneeUserId: string
+) {
+  return apiRequest<TaskItem>(`/tasks/${taskId}`, {
+    method: "PATCH",
+    token: session.token,
+    body: {
+      title,
+      description,
+      status,
+      assigneeUserId: assigneeUserId || null
+    }
+  });
+}
+
 export async function assignMembership(
   session: SessionState,
   userId: string,
@@ -133,4 +179,15 @@ export async function assignMembership(
     token: session.token,
     body: { userId, email, displayName, role }
   });
+}
+
+function tryParseApiError(raw: string): ApiErrorPayload | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as ApiErrorPayload;
+  } catch {
+    return null;
+  }
 }

@@ -14,7 +14,9 @@ import {
   fetchTasks,
   login,
   logout,
-  postMessage
+  postMessage,
+  updateDocument,
+  updateTask
 } from "../lib/api";
 import { clearSession, readSession, writeSession } from "../lib/session";
 import type { Channel, DocumentItem, MeResponse, MembershipAssignment, Message, SessionState, TaskItem } from "../lib/types";
@@ -52,9 +54,11 @@ export function AppShell() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [selectedChannelId, setSelectedChannelId] = useState<string>("");
-  const [error, setError] = useState<string>("");
-  const [status, setStatus] = useState<string>("Idle");
+  const [selectedChannelId, setSelectedChannelId] = useState("");
+  const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState("Idle");
 
   const [bootstrapForm, setBootstrapForm] = useState<BootstrapForm>(bootstrapDefaults);
   const [loginForm, setLoginForm] = useState<LoginForm>(loginDefaults);
@@ -70,10 +74,20 @@ export function AppShell() {
     title: "Architecture Notes",
     content: "Initial collaboration platform notes"
   });
+  const [documentEditForm, setDocumentEditForm] = useState({
+    title: "",
+    content: ""
+  });
   const [taskForm, setTaskForm] = useState({
     title: "Bootstrap API",
     description: "Implement the first API slice",
     assigneeUserId: "user-alice"
+  });
+  const [taskEditForm, setTaskEditForm] = useState({
+    title: "",
+    description: "",
+    status: "TODO",
+    assigneeUserId: ""
   });
 
   useEffect(() => {
@@ -91,6 +105,8 @@ export function AppShell() {
       setTasks([]);
       setMessages([]);
       setSelectedChannelId("");
+      setSelectedDocumentId("");
+      setSelectedTaskId("");
       return;
     }
 
@@ -105,9 +121,43 @@ export function AppShell() {
     void loadMessages(session, selectedChannelId);
   }, [session, selectedChannelId]);
 
+  useEffect(() => {
+    const selectedDocument = documents.find((item) => item.documentId === selectedDocumentId);
+    if (selectedDocument) {
+      setDocumentEditForm({
+        title: selectedDocument.title,
+        content: selectedDocument.content
+      });
+    }
+  }, [documents, selectedDocumentId]);
+
+  useEffect(() => {
+    const selectedTask = tasks.find((item) => item.taskId === selectedTaskId);
+    if (selectedTask) {
+      setTaskEditForm({
+        title: selectedTask.title,
+        description: selectedTask.description,
+        status: selectedTask.status,
+        assigneeUserId: selectedTask.assigneeUserId ?? ""
+      });
+    }
+  }, [tasks, selectedTaskId]);
+
   const canManageWorkspace = useMemo(() => {
     return currentUser?.role === "OWNER" || currentUser?.role === "ADMIN";
   }, [currentUser]);
+
+  const canUpdateResources = canManageWorkspace;
+
+  const selectedDocument = useMemo(
+    () => documents.find((item) => item.documentId === selectedDocumentId) ?? null,
+    [documents, selectedDocumentId]
+  );
+
+  const selectedTask = useMemo(
+    () => tasks.find((item) => item.taskId === selectedTaskId) ?? null,
+    [tasks, selectedTaskId]
+  );
 
   async function refreshWorkspace(activeSession: SessionState) {
     try {
@@ -123,8 +173,9 @@ export function AppShell() {
       setChannels(nextChannels);
       setDocuments(nextDocuments);
       setTasks(nextTasks);
-      const defaultChannelId = nextChannels[0]?.channelId ?? "";
-      setSelectedChannelId((current) => current || defaultChannelId);
+      setSelectedChannelId((current) => current || nextChannels[0]?.channelId || "");
+      setSelectedDocumentId((current) => current || nextDocuments[0]?.documentId || "");
+      setSelectedTaskId((current) => current || nextTasks[0]?.taskId || "");
       setStatus("Workspace ready");
     } catch (cause) {
       clearSession();
@@ -186,7 +237,7 @@ export function AppShell() {
     try {
       await logout(session.token);
     } catch {
-      // Ignore logout failures and clear client state anyway.
+      // Intentionally ignore remote logout failures.
     }
     clearSession();
     setSession(null);
@@ -195,7 +246,7 @@ export function AppShell() {
 
   async function handleCreateChannel(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!session) {
+    if (!session || !canManageWorkspace) {
       return;
     }
     try {
@@ -235,8 +286,24 @@ export function AppShell() {
       setError("");
       const created = await createDocument(session, documentForm.title, documentForm.content);
       setDocuments((current) => [created, ...current]);
+      setSelectedDocumentId(created.documentId);
       setDocumentForm({ title: "", content: "" });
       setStatus(`Document created: ${created.title}`);
+    } catch (cause) {
+      setError(readError(cause));
+    }
+  }
+
+  async function handleUpdateDocument(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session || !selectedDocument || !canUpdateResources) {
+      return;
+    }
+    try {
+      setError("");
+      const updated = await updateDocument(session, selectedDocument.documentId, documentEditForm.title, documentEditForm.content);
+      setDocuments((current) => current.map((item) => (item.documentId === updated.documentId ? updated : item)));
+      setStatus(`Document updated: ${updated.title}`);
     } catch (cause) {
       setError(readError(cause));
     }
@@ -251,6 +318,7 @@ export function AppShell() {
       setError("");
       const created = await createTask(session, taskForm.title, taskForm.description, taskForm.assigneeUserId);
       setTasks((current) => [created, ...current]);
+      setSelectedTaskId(created.taskId);
       setTaskForm({ title: "", description: "", assigneeUserId: currentUser?.userId ?? "" });
       setStatus(`Task created: ${created.title}`);
     } catch (cause) {
@@ -258,9 +326,31 @@ export function AppShell() {
     }
   }
 
+  async function handleUpdateTask(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session || !selectedTask || !canUpdateResources) {
+      return;
+    }
+    try {
+      setError("");
+      const updated = await updateTask(
+        session,
+        selectedTask.taskId,
+        taskEditForm.title,
+        taskEditForm.description,
+        taskEditForm.status,
+        taskEditForm.assigneeUserId
+      );
+      setTasks((current) => current.map((item) => (item.taskId === updated.taskId ? updated : item)));
+      setStatus(`Task updated: ${updated.title}`);
+    } catch (cause) {
+      setError(readError(cause));
+    }
+  }
+
   async function handleAssignMembership(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!session) {
+    if (!session || !canManageWorkspace) {
       return;
     }
     try {
@@ -272,6 +362,7 @@ export function AppShell() {
         memberForm.displayName,
         memberForm.role
       );
+      setTaskForm((existing) => ({ ...existing, assigneeUserId: result.userId }));
       setStatus(`Member assigned: ${result.userId} (${result.role})`);
     } catch (cause) {
       setError(readError(cause));
@@ -364,7 +455,7 @@ export function AppShell() {
               <h2 className="title">Workspace Dashboard</h2>
               <p className="muted">
                 {currentUser
-                  ? `${currentUser.displayName} · ${currentUser.role} · ${currentUser.workspaceId}`
+                  ? `${currentUser.displayName} | ${currentUser.role} | ${currentUser.workspaceId}`
                   : "Authenticate to load workspace data."}
               </p>
             </div>
@@ -382,8 +473,9 @@ export function AppShell() {
               <form className="form" onSubmit={handleCreateChannel}>
                 <Field label="Channel Name" value={channelName} onChange={setChannelName} />
                 <div className="actions">
-                  <button className="button button-primary" type="submit">Create Channel</button>
+                  <button className="button button-primary" disabled={!canManageWorkspace} type="submit">Create Channel</button>
                 </div>
+                {!canManageWorkspace ? <p className="notice">Channel creation requires an owner or admin role.</p> : null}
               </form>
               <div className="list">
                 {channels.length === 0 ? (
@@ -450,11 +542,16 @@ export function AppShell() {
                   <div className="empty">No documents loaded.</div>
                 ) : (
                   documents.map((document) => (
-                    <div className="item" key={document.documentId}>
+                    <button
+                      className="item"
+                      key={document.documentId}
+                      type="button"
+                      onClick={() => setSelectedDocumentId(document.documentId)}
+                    >
                       <strong>{document.title}</strong>
                       <div>{document.content}</div>
                       <span className="meta">{document.status}</span>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
@@ -488,16 +585,100 @@ export function AppShell() {
                   <div className="empty">No tasks loaded.</div>
                 ) : (
                   tasks.map((task) => (
-                    <div className="item" key={task.taskId}>
+                    <button
+                      className="item"
+                      key={task.taskId}
+                      type="button"
+                      onClick={() => setSelectedTaskId(task.taskId)}
+                    >
                       <strong>{task.title}</strong>
                       <div>{task.description}</div>
                       <span className="meta">
-                        {task.status} · {task.assigneeUserId ?? "Unassigned"}
+                        {task.status} | {task.assigneeUserId ?? "Unassigned"}
                       </span>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
+            </section>
+          </div>
+
+          <div className="detail-grid">
+            <section className="panel">
+              <div className="section-header">
+                <h3>Document Detail</h3>
+                <span className="meta">{selectedDocument?.documentId ?? "No document selected"}</span>
+              </div>
+              {selectedDocument ? (
+                <form className="form" onSubmit={handleUpdateDocument}>
+                  <Field
+                    label="Title"
+                    value={documentEditForm.title}
+                    onChange={(value) => setDocumentEditForm({ ...documentEditForm, title: value })}
+                  />
+                  <TextAreaField
+                    label="Content"
+                    value={documentEditForm.content}
+                    onChange={(value) => setDocumentEditForm({ ...documentEditForm, content: value })}
+                  />
+                  <div className="actions">
+                    <button className="button button-primary" disabled={!canUpdateResources} type="submit">
+                      Update Document
+                    </button>
+                  </div>
+                  {!canUpdateResources ? (
+                    <p className="notice">
+                      Update actions are currently shown only for owner/admin roles because the backend does not yet expose resource-owner metadata.
+                    </p>
+                  ) : null}
+                </form>
+              ) : (
+                <div className="empty">Select a document to inspect or update it.</div>
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="section-header">
+                <h3>Task Detail</h3>
+                <span className="meta">{selectedTask?.taskId ?? "No task selected"}</span>
+              </div>
+              {selectedTask ? (
+                <form className="form" onSubmit={handleUpdateTask}>
+                  <Field
+                    label="Title"
+                    value={taskEditForm.title}
+                    onChange={(value) => setTaskEditForm({ ...taskEditForm, title: value })}
+                  />
+                  <TextAreaField
+                    label="Description"
+                    value={taskEditForm.description}
+                    onChange={(value) => setTaskEditForm({ ...taskEditForm, description: value })}
+                  />
+                  <SelectField
+                    label="Status"
+                    value={taskEditForm.status}
+                    options={["TODO", "IN_PROGRESS", "DONE"]}
+                    onChange={(value) => setTaskEditForm({ ...taskEditForm, status: value })}
+                  />
+                  <Field
+                    label="Assignee User ID"
+                    value={taskEditForm.assigneeUserId}
+                    onChange={(value) => setTaskEditForm({ ...taskEditForm, assigneeUserId: value })}
+                  />
+                  <div className="actions">
+                    <button className="button button-primary" disabled={!canUpdateResources} type="submit">
+                      Update Task
+                    </button>
+                  </div>
+                  {!canUpdateResources ? (
+                    <p className="notice">
+                      Task updates are hidden for member roles in this UI until the backend returns per-task ownership metadata for finer client-side authorization.
+                    </p>
+                  ) : null}
+                </form>
+              ) : (
+                <div className="empty">Select a task to inspect or update it.</div>
+              )}
             </section>
           </div>
         </section>

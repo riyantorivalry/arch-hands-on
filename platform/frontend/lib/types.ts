@@ -73,3 +73,9 @@ export type SessionState = {
   workspaceId: string;
   userId: string;
 };
+
+export type ApiErrorPayload = {
+  code?: string;
+  message?: string;
+  timestamp?: string;
+};
