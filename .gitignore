@@ -1,2 +1,4 @@
 .idea
 arch-hands-on.iml
+target/
+*.log
