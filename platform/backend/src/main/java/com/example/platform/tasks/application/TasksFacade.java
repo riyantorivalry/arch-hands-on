@@ -1,12 +1,16 @@
 package com.example.platform.tasks.application;
 
 import com.example.platform.common.audit.AuditLogger;
+import com.example.platform.common.domain.DomainEventPublisher;
 import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
+import com.example.platform.tasks.domain.TaskAssignedEvent;
 import com.example.platform.tasks.domain.TaskCommentEntity;
+import com.example.platform.tasks.domain.TaskCreatedEvent;
 import com.example.platform.tasks.domain.TaskEntity;
 import com.example.platform.tasks.domain.TaskStatus;
+import com.example.platform.tasks.domain.TaskStatusChangedEvent;
 import com.example.platform.tasks.infrastructure.TaskCommentRepository;
 import com.example.platform.tasks.infrastructure.TaskRepository;
 import java.text.Normalizer;
@@ -24,19 +28,22 @@ public class TasksFacade {
     private final MembershipRepository membershipRepository;
     private final AuditLogger auditLogger;
     private final AuthorizationService authorizationService;
+    private final DomainEventPublisher domainEventPublisher;
 
     public TasksFacade(
             TaskRepository taskRepository,
             TaskCommentRepository taskCommentRepository,
             MembershipRepository membershipRepository,
             AuditLogger auditLogger,
-            AuthorizationService authorizationService
+            AuthorizationService authorizationService,
+            DomainEventPublisher domainEventPublisher
     ) {
         this.taskRepository = taskRepository;
         this.taskCommentRepository = taskCommentRepository;
         this.membershipRepository = membershipRepository;
         this.auditLogger = auditLogger;
         this.authorizationService = authorizationService;
+        this.domainEventPublisher = domainEventPublisher;
     }
 
     @Transactional
@@ -58,6 +65,25 @@ public class TasksFacade {
                 userId
         ));
         auditLogger.logWrite("tasks", "create", "task", saved.getTaskId(), "SUCCESS");
+
+        // Publish domain events
+        domainEventPublisher.publish(new TaskCreatedEvent(
+                membership.getTenantId(),
+                saved.getTaskId(),
+                workspaceId,
+                title,
+                userId
+        ));
+
+        if (saved.getAssigneeUserId() != null) {
+            domainEventPublisher.publish(new TaskAssignedEvent(
+                    membership.getTenantId(),
+                    saved.getTaskId(),
+                    workspaceId,
+                    saved.getAssigneeUserId()
+            ));
+        }
+
         return toTaskView(saved);
     }
 
@@ -84,8 +110,32 @@ public class TasksFacade {
         }
 
         TaskStatus nextStatus = TaskStatus.valueOf(status);
+        String previousStatus = task.getStatus().name();
+        String previousAssignee = task.getAssigneeUserId();
+
         task.update(title, description, nextStatus, blankToNull(assigneeUserId), userId);
         auditLogger.logWrite("tasks", "update", "task", task.getTaskId(), "SUCCESS");
+
+        // Publish domain events
+        if (!previousStatus.equals(nextStatus.name())) {
+            domainEventPublisher.publish(new TaskStatusChangedEvent(
+                    membership.getTenantId(),
+                    task.getTaskId(),
+                    task.getWorkspaceId(),
+                    previousStatus,
+                    nextStatus.name()
+            ));
+        }
+
+        if (!java.util.Objects.equals(previousAssignee, task.getAssigneeUserId()) && task.getAssigneeUserId() != null) {
+            domainEventPublisher.publish(new TaskAssignedEvent(
+                    membership.getTenantId(),
+                    task.getTaskId(),
+                    task.getWorkspaceId(),
+                    task.getAssigneeUserId()
+            ));
+        }
+
         return toTaskView(task);
     }
 

@@ -1,13 +1,13 @@
 package com.example.platform.messaging.application;
 
 import com.example.platform.common.audit.AuditLogger;
+import com.example.platform.common.domain.DomainEventPublisher;
 import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import com.example.platform.messaging.domain.ChannelEntity;
 import com.example.platform.messaging.domain.MessageEntity;
-import com.example.platform.messaging.infrastructure.ChannelRepository;
-import com.example.platform.messaging.infrastructure.MessageRepository;
+import com.example.platform.messaging.domain.MessagePostedEvent;
 import com.example.platform.tenantmanagement.infrastructure.WorkspaceRepository;
 import java.text.Normalizer;
 import java.util.List;
@@ -19,20 +19,22 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MessagingFacade {
 
-    private final ChannelRepository channelRepository;
-    private final MessageRepository messageRepository;
+    private final com.example.platform.messaging.infrastructure.ChannelRepository channelRepository;
+    private final com.example.platform.messaging.infrastructure.MessageRepository messageRepository;
     private final MembershipRepository membershipRepository;
     private final WorkspaceRepository workspaceRepository;
     private final AuditLogger auditLogger;
     private final AuthorizationService authorizationService;
+    private final DomainEventPublisher domainEventPublisher;
 
     public MessagingFacade(
-            ChannelRepository channelRepository,
-            MessageRepository messageRepository,
+            com.example.platform.messaging.infrastructure.ChannelRepository channelRepository,
+            com.example.platform.messaging.infrastructure.MessageRepository messageRepository,
             MembershipRepository membershipRepository,
             WorkspaceRepository workspaceRepository,
             AuditLogger auditLogger,
-            AuthorizationService authorizationService
+            AuthorizationService authorizationService,
+            DomainEventPublisher domainEventPublisher
     ) {
         this.channelRepository = channelRepository;
         this.messageRepository = messageRepository;
@@ -40,6 +42,7 @@ public class MessagingFacade {
         this.workspaceRepository = workspaceRepository;
         this.auditLogger = auditLogger;
         this.authorizationService = authorizationService;
+        this.domainEventPublisher = domainEventPublisher;
     }
 
     @Transactional
@@ -79,6 +82,16 @@ public class MessagingFacade {
                 null
         ));
         auditLogger.logWrite("messaging", "create", "message", saved.getMessageId(), "SUCCESS");
+        
+        // Publish domain event
+        domainEventPublisher.publish(new MessagePostedEvent(
+                membership.getTenantId(),
+                channelId,
+                saved.getMessageId(),
+                authorUserId,
+                body
+        ));
+        
         return toMessageView(saved);
     }
 
@@ -103,6 +116,16 @@ public class MessagingFacade {
                 parent.getMessageId()
         ));
         auditLogger.logWrite("messaging", "reply", "message", saved.getMessageId(), "SUCCESS");
+        
+        // Publish domain event
+        domainEventPublisher.publish(new MessagePostedEvent(
+                membership.getTenantId(),
+                parent.getChannelId(),
+                saved.getMessageId(),
+                authorUserId,
+                body
+        ));
+        
         return toMessageView(saved);
     }
 

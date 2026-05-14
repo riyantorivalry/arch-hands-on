@@ -1,10 +1,13 @@
 package com.example.platform.documents.application;
 
 import com.example.platform.common.audit.AuditLogger;
+import com.example.platform.common.domain.DomainEventPublisher;
 import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.documents.domain.DocumentCommentEntity;
+import com.example.platform.documents.domain.DocumentCreatedEvent;
 import com.example.platform.documents.domain.DocumentEntity;
 import com.example.platform.documents.domain.DocumentStatus;
+import com.example.platform.documents.domain.DocumentUpdatedEvent;
 import com.example.platform.documents.infrastructure.DocumentCommentRepository;
 import com.example.platform.documents.infrastructure.DocumentRepository;
 import com.example.platform.identityaccess.domain.MembershipStatus;
@@ -24,19 +27,22 @@ public class DocumentsFacade {
     private final MembershipRepository membershipRepository;
     private final AuditLogger auditLogger;
     private final AuthorizationService authorizationService;
+    private final DomainEventPublisher domainEventPublisher;
 
     public DocumentsFacade(
             DocumentRepository documentRepository,
             DocumentCommentRepository documentCommentRepository,
             MembershipRepository membershipRepository,
             AuditLogger auditLogger,
-            AuthorizationService authorizationService
+            AuthorizationService authorizationService,
+            DomainEventPublisher domainEventPublisher
     ) {
         this.documentRepository = documentRepository;
         this.documentCommentRepository = documentCommentRepository;
         this.membershipRepository = membershipRepository;
         this.auditLogger = auditLogger;
         this.authorizationService = authorizationService;
+        this.domainEventPublisher = domainEventPublisher;
     }
 
     @Transactional
@@ -53,6 +59,16 @@ public class DocumentsFacade {
                 userId
         ));
         auditLogger.logWrite("documents", "create", "document", saved.getDocumentId(), "SUCCESS");
+
+        // Publish domain event
+        domainEventPublisher.publish(new DocumentCreatedEvent(
+                membership.getTenantId(),
+                saved.getDocumentId(),
+                workspaceId,
+                title,
+                userId
+        ));
+
         return toDocumentView(saved);
     }
 
@@ -76,6 +92,16 @@ public class DocumentsFacade {
         authorizationService.requireOwnerOrAdminOrResourceOwner(membership, document.getCreatedByUserId());
         document.update(title, content, userId);
         auditLogger.logWrite("documents", "update", "document", document.getDocumentId(), "SUCCESS");
+
+        // Publish domain event
+        domainEventPublisher.publish(new DocumentUpdatedEvent(
+                membership.getTenantId(),
+                document.getDocumentId(),
+                document.getWorkspaceId(),
+                title,
+                userId
+        ));
+
         return toDocumentView(document);
     }
 

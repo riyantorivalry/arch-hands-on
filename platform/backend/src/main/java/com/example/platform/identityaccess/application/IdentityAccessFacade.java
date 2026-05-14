@@ -1,5 +1,7 @@
 package com.example.platform.identityaccess.application;
 
+import com.example.platform.common.domain.DomainEventPublisher;
+import com.example.platform.identityaccess.domain.WorkspaceMemberAddedEvent;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import com.example.platform.identityaccess.infrastructure.UserRepository;
 import org.springframework.transaction.annotation.Transactional;
@@ -10,10 +12,12 @@ public class IdentityAccessFacade {
 
     private final UserRepository userRepository;
     private final MembershipRepository membershipRepository;
+    private final DomainEventPublisher domainEventPublisher;
 
-    public IdentityAccessFacade(UserRepository userRepository, MembershipRepository membershipRepository) {
+    public IdentityAccessFacade(UserRepository userRepository, MembershipRepository membershipRepository, DomainEventPublisher domainEventPublisher) {
         this.userRepository = userRepository;
         this.membershipRepository = membershipRepository;
+        this.domainEventPublisher = domainEventPublisher;
     }
 
     public CurrentActorView getCurrentActor(String workspaceId, String userId) {
@@ -70,6 +74,15 @@ public class IdentityAccessFacade {
                                 com.example.platform.identityaccess.domain.MembershipStatus.ACTIVE
                         )
                 ));
+        
+        // Publish domain event
+        domainEventPublisher.publish(new WorkspaceMemberAddedEvent(
+                membership.getTenantId(),
+                membership.getWorkspaceId(),
+                membership.getUserId(),
+                membership.getRole().name()
+        ));
+        
         return new MembershipAssignmentView(
                 membership.getTenantId(),
                 membership.getWorkspaceId(),

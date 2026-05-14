@@ -1,5 +1,6 @@
 package com.example.platform.tenantmanagement.application;
 
+import com.example.platform.common.domain.DomainEventPublisher;
 import com.example.platform.identityaccess.domain.MembershipEntity;
 import com.example.platform.identityaccess.domain.MembershipRole;
 import com.example.platform.identityaccess.domain.MembershipStatus;
@@ -7,6 +8,7 @@ import com.example.platform.identityaccess.domain.UserEntity;
 import com.example.platform.identityaccess.domain.UserStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import com.example.platform.identityaccess.infrastructure.UserRepository;
+import com.example.platform.tenantmanagement.domain.TenantCreatedEvent;
 import com.example.platform.tenantmanagement.domain.TenantEntity;
 import com.example.platform.tenantmanagement.domain.TenantStatus;
 import com.example.platform.tenantmanagement.domain.WorkspaceEntity;
@@ -25,16 +27,20 @@ public class TenantManagementFacade {
     private final WorkspaceRepository workspaceRepository;
     private final UserRepository userRepository;
     private final MembershipRepository membershipRepository;
+    private final DomainEventPublisher domainEventPublisher;
+
     public TenantManagementFacade(
             TenantRepository tenantRepository,
             WorkspaceRepository workspaceRepository,
             UserRepository userRepository,
-            MembershipRepository membershipRepository
+            MembershipRepository membershipRepository,
+            DomainEventPublisher domainEventPublisher
     ) {
         this.tenantRepository = tenantRepository;
         this.workspaceRepository = workspaceRepository;
         this.userRepository = userRepository;
         this.membershipRepository = membershipRepository;
+        this.domainEventPublisher = domainEventPublisher;
     }
 
     @Transactional
@@ -55,6 +61,9 @@ public class TenantManagementFacade {
                 .orElseGet(() -> membershipRepository.save(
                         new MembershipEntity(tenantId, workspaceId, user.getUserId(), MembershipRole.OWNER, MembershipStatus.ACTIVE)
                 ));
+
+        // Publish domain event
+        domainEventPublisher.publish(new TenantCreatedEvent(tenantId, tenantName, workspaceId, workspaceName));
 
         return new TenantView(tenantId, workspaceId, tenantName, workspaceName, TenantStatus.ACTIVE.name());
     }
