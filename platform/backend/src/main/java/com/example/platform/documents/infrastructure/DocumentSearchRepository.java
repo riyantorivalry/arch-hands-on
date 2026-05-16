@@ -15,7 +15,6 @@ import org.opensearch.client.Request;
 import org.opensearch.client.Response;
 import org.opensearch.client.ResponseException;
 import org.opensearch.client.RestClient;
-import org.opensearch.client.RestClientBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,6 +53,8 @@ public class DocumentSearchRepository {
             request.addParameter("refresh", "wait_for");
             request.setJsonEntity(objectMapper.writeValueAsString(toSource(document)));
             restClient.performRequest(request);
+        } catch (ResponseException exception) {
+            throw new IllegalStateException("Failed to index document in OpenSearch: " + responseDetails(exception), exception);
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to index document in OpenSearch", exception);
         }
@@ -137,6 +138,8 @@ public class DocumentSearchRepository {
                 ));
             }
             return results;
+        } catch (ResponseException exception) {
+            throw new IllegalStateException("Failed to search documents in OpenSearch: " + responseDetails(exception), exception);
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to search documents in OpenSearch", exception);
         }
@@ -217,5 +220,9 @@ public class DocumentSearchRepository {
 
     private static String writeInstant(Instant value) {
         return value == null ? null : value.toString();
+    }
+
+    private static String responseDetails(ResponseException exception) {
+        return exception.getResponse().getStatusLine() + " - " + exception.getMessage();
     }
 }

@@ -19,7 +19,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class DocumentsFacade {
@@ -32,6 +34,7 @@ public class DocumentsFacade {
     private final DomainEventPublisher domainEventPublisher;
     private final AnalyticsService analyticsService;
     private final DocumentSearchRepository documentSearchRepository;
+    private final TransactionTemplate transactionTemplate;
 
     public DocumentsFacade(
             DocumentRepository documentRepository,
@@ -41,7 +44,8 @@ public class DocumentsFacade {
             AuthorizationService authorizationService,
             DomainEventPublisher domainEventPublisher,
             AnalyticsService analyticsService,
-            DocumentSearchRepository documentSearchRepository
+            DocumentSearchRepository documentSearchRepository,
+            PlatformTransactionManager transactionManager
     ) {
         this.documentRepository = documentRepository;
         this.documentCommentRepository = documentCommentRepository;
@@ -51,6 +55,8 @@ public class DocumentsFacade {
         this.domainEventPublisher = domainEventPublisher;
         this.analyticsService = analyticsService;
         this.documentSearchRepository = documentSearchRepository;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.transactionTemplate.setReadOnly(true);
     }
 
     @Transactional
@@ -83,6 +89,7 @@ public class DocumentsFacade {
         return toDocumentView(saved);
     }
 
+    @Transactional(readOnly = true)
     public List<DocumentView> listDocuments(String workspaceId) {
         return documentRepository.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId).stream()
                 .map(this::toDocumentView)
@@ -90,8 +97,20 @@ public class DocumentsFacade {
     }
 
     public List<DocumentView> searchDocuments(String workspaceId, String query) {
-        // Use OpenSearch for full-text search
-        List<DocumentView> results = documentSearchRepository
+        List<DocumentView> results;
+        try {
+            results = transactionTemplate.execute(status -> searchDocumentsWithOpenSearch(workspaceId, query));
+        } catch (RuntimeException exception) {
+            auditLogger.logWrite("documents", "search", "workspace", workspaceId, "OPENSEARCH_FALLBACK: " + exception.getMessage());
+            results = transactionTemplate.execute(status -> searchDocumentsWithPostgres(workspaceId, query));
+        }
+
+        analyticsService.trackSearch(query, results.size());
+        return results;
+    }
+
+    private List<DocumentView> searchDocumentsWithOpenSearch(String workspaceId, String query) {
+        return documentSearchRepository
                 .findByWorkspaceIdAndTitleContainsOrContentContains(workspaceId, query, query)
                 .stream()
                 .map(doc -> new DocumentView(
@@ -104,13 +123,15 @@ public class DocumentsFacade {
                         doc.getLastModifiedByUserId()
                 ))
                 .toList();
-
-        // Track search analytics
-        analyticsService.trackSearch(query, results.size());
-
-        return results;
     }
 
+    private List<DocumentView> searchDocumentsWithPostgres(String workspaceId, String query) {
+        return documentRepository.searchByWorkspaceIdAndQuery(workspaceId, query).stream()
+                .map(this::toDocumentView)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public DocumentView getDocument(String documentId) {
         return documentRepository.findById(documentId)
                 .map(this::toDocumentView)

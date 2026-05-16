@@ -87,12 +87,14 @@ public class TasksFacade {
         return toTaskView(saved);
     }
 
+    @Transactional(readOnly = true)
     public List<TaskView> listTasks(String workspaceId) {
         return taskRepository.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId).stream()
                 .map(this::toTaskView)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public TaskView getTask(String taskId) {
         return taskRepository.findById(taskId)
                 .map(this::toTaskView)

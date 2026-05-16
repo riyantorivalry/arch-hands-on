@@ -20,6 +20,7 @@ public class IdentityAccessFacade {
         this.domainEventPublisher = domainEventPublisher;
     }
 
+    @Transactional(readOnly = true)
     public CurrentActorView getCurrentActor(String workspaceId, String userId) {
         var user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));

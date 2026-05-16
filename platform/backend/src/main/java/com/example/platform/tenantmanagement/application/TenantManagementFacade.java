@@ -68,12 +68,14 @@ public class TenantManagementFacade {
         return new TenantView(tenantId, workspaceId, tenantName, workspaceName, TenantStatus.ACTIVE.name());
     }
 
+    @Transactional(readOnly = true)
     public WorkspaceView getWorkspace(String workspaceId) {
         var workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
         return new WorkspaceView(workspace.getWorkspaceId(), workspace.getTenantId(), workspace.getName(), workspace.getStatus().name());
     }
 
+    @Transactional(readOnly = true)
     public WorkspaceView updateWorkspaceSettings(String workspaceId) {
         return getWorkspace(workspaceId);
     }

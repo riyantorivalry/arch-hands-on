@@ -8,8 +8,67 @@ services:
       POSTGRES_DB: platform
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: platform
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres-primary/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres-replica:
+    image: postgres:16-alpine
+    container_name: platform-postgres-replica
+    user: postgres
+    ports:
+      - "5433:5432"
+    environment:
+      PGUSER: platform_readonly
+      POSTGRES_PASSWORD: platform
+      REPLICATION_USER: replicator
+      REPLICATION_PASSWORD: replicator_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          rm -rf "$$PGDATA"/*
+          until pg_isready -h postgres -p 5432 -U platform -d platform; do
+            sleep 2
+          done
+          PGPASSWORD="$$REPLICATION_PASSWORD" pg_basebackup \
+            -h postgres \
+            -D "$$PGDATA" \
+            -U "$$REPLICATION_USER" \
+            -Fp \
+            -Xs \
+            -P \
+            -R
+          chmod 700 "$$PGDATA"
+        fi
+        exec postgres
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform_readonly -d platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # Phase 2: Redis for caching and rate limiting
   redis:
@@ -72,5 +131,6 @@ services:
 
 volumes:
   postgres-data:
+  postgres-replica-data:
   redis-data:
   mongo_data:

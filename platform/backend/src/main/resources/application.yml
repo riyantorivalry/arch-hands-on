@@ -2,9 +2,21 @@ spring:
   application:
     name: platform-backend
   datasource:
+    # Backward-compatible default datasource (used when master block is not provided).
     url: jdbc:postgresql://localhost:5432/platform
     username: platform
     password: platform
+    master:
+      url: jdbc:postgresql://localhost:5432/platform
+      username: platform
+      password: platform
+    # Optional read replica. If omitted, read traffic falls back to master.
+    replica:
+      url: jdbc:postgresql://localhost:5433/platform
+      username: platform_readonly
+      password: platform_readonly
+      hikari:
+        read-only: true
   jpa:
     open-in-view: false
     hibernate:

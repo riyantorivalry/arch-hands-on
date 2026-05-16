@@ -46,6 +46,33 @@ This scaffold establishes:
 
 Feature persistence and domain rules should be added module by module from the Phase 1 contracts.
 
+## Postgres Master-Replica Routing
+
+The backend supports read/write datasource routing:
+
+- write transactions (`@Transactional`) -> `spring.datasource.master`
+- read-only transactions (`@Transactional(readOnly = true)`) -> `spring.datasource.replica`
+- if replica is not configured, reads automatically fall back to master
+
+Local primary-replica setup is documented in [PostgreSQL primary-replica setup](../../docs/runbooks/postgres-read-replica.md).
+
+Example config:
+
+```yaml
+spring:
+  datasource:
+    master:
+      url: jdbc:postgresql://postgres-master:5432/platform
+      username: platform_rw
+      password: ***
+    replica:
+      url: jdbc:postgresql://postgres-replica:5432/platform
+      username: platform_ro
+      password: ***
+      hikari:
+        read-only: true
+```
+
 ## Observability
 
 Complete observability infrastructure is included:
@@ -111,4 +138,3 @@ metrics.recordTaskCompleted();
 // Get correlation context
 String correlationId = ObservabilityContext.getCorrelationId();
 ```
-

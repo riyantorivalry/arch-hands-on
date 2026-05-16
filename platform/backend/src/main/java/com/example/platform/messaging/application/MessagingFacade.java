@@ -61,6 +61,7 @@ public class MessagingFacade {
         return toChannelView(channel);
     }
 
+    @Transactional(readOnly = true)
     public List<ChannelView> listChannels(String workspaceId) {
         return channelRepository.findByWorkspaceIdOrderByNameAsc(workspaceId).stream()
                 .map(this::toChannelView)
@@ -95,6 +96,7 @@ public class MessagingFacade {
         return toMessageView(saved);
     }
 
+    @Transactional(readOnly = true)
     public List<MessageView> listMessages(String channelId) {
         return messageRepository.findByChannelIdOrderByCreatedAtAsc(channelId).stream()
                 .map(this::toMessageView)
