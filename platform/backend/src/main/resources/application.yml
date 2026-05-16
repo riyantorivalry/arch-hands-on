@@ -50,11 +50,47 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info,metrics,prometheus,loggers,threaddump,heapdump
+      base-path: /actuator
+      path-mapping:
+        prometheus: prometheus
   endpoint:
     health:
       probes:
         enabled: true
+      show-details: when-authorized
+      show-components: when-authorized
+      livenessState:
+        enabled: true
+      readinessState:
+        enabled: true
+    metrics:
+      enabled: true
+    env:
+      enabled: true
+    loggers:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        task.processing.time: true
+        document.processing.time: true
+        collaboration.latency: true
+        event.publishing.time: true
+        database.query.time: true
+        api.response.time: true
+      slo:
+        http.server.requests: 50ms,100ms,200ms,500ms,1s
+    tags:
+      application: ${spring.application.name}
+      instance_id: ${HOSTNAME:localhost}
+  tracing:
+    sampling:
+      probability: 1.0
 
 server:
   shutdown: graceful
@@ -68,4 +104,20 @@ platform:
 
 logging:
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [corr=%X{correlationId:-} tenant=%X{tenantId:-} workspace=%X{workspaceId:-} user=%X{userId:-}] %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [corr=%X{correlationId:-} req=%X{requestId:-} trace=%X{traceId:-} tenant=%X{tenantId:-} user=%X{userId:-}] %logger{36} - %msg%n"
+  level:
+    root: INFO
+    com.example.platform: DEBUG
+    com.example.platform.common.infrastructure.observability: DEBUG
+    org.springframework: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
+  file:
+    name: logs/platform-backend.log
+    max-size: 100MB
+    max-history: 30
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+      total-size-cap: 1GB
