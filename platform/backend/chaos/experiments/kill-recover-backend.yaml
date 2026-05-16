@@ -1,0 +1,60 @@
+version: 1.0.0
+title: Kill and recover backend container
+description: |
+  Stops the backend Docker container, verifies health is down, then starts it again and verifies health is restored.
+configuration:
+  container: platform-backend
+  url: http://localhost:8080/actuator/health
+  wait_timeout: 60
+method:
+  - type: probe
+    name: pre-check-backend-up
+    provider:
+      type: python
+      module: chaos.activities
+      func: wait_for_health
+      arguments:
+        url: ${configuration.url}
+        up: true
+        timeout: ${configuration.wait_timeout}
+
+  - type: action
+    name: stop-backend-container
+    provider:
+      type: python
+      module: chaos.activities
+      func: stop_container
+      arguments:
+        container: ${configuration.container}
+
+  - type: probe
+    name: check-backend-down
+    provider:
+      type: python
+      module: chaos.activities
+      func: wait_for_health
+      arguments:
+        url: ${configuration.url}
+        up: false
+        timeout: ${configuration.wait_timeout}
+
+  - type: action
+    name: start-backend-container
+    provider:
+      type: python
+      module: chaos.activities
+      func: start_container
+      arguments:
+        container: ${configuration.container}
+
+  - type: probe
+    name: post-check-backend-up
+    provider:
+      type: python
+      module: chaos.activities
+      func: wait_for_health
+      arguments:
+        url: ${configuration.url}
+        up: true
+        timeout: ${configuration.wait_timeout}
+

@@ -1,0 +1,15 @@
+version: 1.0.0
+title: Backend health check
+description: Verify that the backend /actuator/health endpoint reports UP
+configuration:
+  url: http://localhost:8080/actuator/health
+method:
+  - type: probe
+    name: check-backend-health-up
+    provider:
+      type: python
+      module: chaos.activities
+      func: check_health_up
+      arguments:
+        url: ${configuration.url}
+

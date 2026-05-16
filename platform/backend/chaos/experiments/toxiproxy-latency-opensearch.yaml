@@ -1,0 +1,78 @@
+version: 1.0.0
+title: Toxiproxy latency against OpenSearch
+description: Create a Toxiproxy proxy in front of OpenSearch and inject latency, then remove it.
+
+method:
+  - type: action
+    name: create-proxy
+    provider:
+      type: python
+      module: activities
+      func: create_proxy
+      arguments:
+        name: opensearch-proxy
+        listen: 0.0.0.0:9201
+        upstream: opensearch:9200
+
+  - type: probe
+    name: check-proxy-works
+    provider:
+      type: python
+      module: activities
+      func: wait_for_http_ok
+      arguments:
+        url: http://localhost:9201/_cluster/health
+        timeout: 30
+
+  - type: action
+    name: add-latency-toxic
+    provider:
+      type: python
+      module: activities
+      func: create_toxic
+      arguments:
+        proxy: opensearch-proxy
+        toxic_type: latency
+        toxic_name: latency-toxic
+        attributes:
+          latency: 2000
+          jitter: 50
+
+  - type: probe
+    name: probe-slow-response
+    provider:
+      type: python
+      module: activities
+      func: check_health_up
+      arguments:
+        url: http://localhost:9201/_cluster/health
+        timeout: 10
+
+  - type: action
+    name: hold-latency-window
+    provider:
+      type: python
+      module: activities
+      func: sleep_for
+      arguments:
+        seconds: 20
+
+  - type: action
+    name: remove-latency-toxic
+    provider:
+      type: python
+      module: activities
+      func: remove_toxic
+      arguments:
+        proxy: opensearch-proxy
+        toxic_name: latency-toxic
+
+  - type: action
+    name: delete-proxy
+    provider:
+      type: python
+      module: activities
+      func: delete_proxy
+      arguments:
+        name: opensearch-proxy
+

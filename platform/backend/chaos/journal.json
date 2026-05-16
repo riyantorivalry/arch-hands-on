@@ -1,0 +1,280 @@
+{
+  "chaoslib-version": "1.44.0",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "node": "technolins",
+  "experiment": {
+    "version": "1.0.0",
+    "title": "Toxiproxy latency against OpenSearch",
+    "description": "Create a Toxiproxy proxy in front of OpenSearch and inject latency, then remove it.",
+    "method": [
+      {
+        "type": "action",
+        "name": "create-proxy",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "create_proxy",
+          "arguments": {
+            "name": "opensearch-proxy",
+            "listen": "0.0.0.0:9201",
+            "upstream": "opensearch:9200"
+          }
+        }
+      },
+      {
+        "type": "probe",
+        "name": "check-proxy-works",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "wait_for_http_ok",
+          "arguments": {
+            "url": "http://localhost:9201/_cluster/health",
+            "timeout": 30
+          }
+        }
+      },
+      {
+        "type": "action",
+        "name": "add-latency-toxic",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "create_toxic",
+          "arguments": {
+            "proxy": "opensearch-proxy",
+            "toxic_type": "latency",
+            "toxic_name": "latency-toxic",
+            "attributes": {
+              "latency": 2000,
+              "jitter": 50
+            }
+          }
+        }
+      },
+      {
+        "type": "probe",
+        "name": "probe-slow-response",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "check_health_up",
+          "arguments": {
+            "url": "http://localhost:9201/_cluster/health",
+            "timeout": 10
+          }
+        }
+      },
+      {
+        "type": "action",
+        "name": "hold-latency-window",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "sleep_for",
+          "arguments": {
+            "seconds": 20
+          }
+        }
+      },
+      {
+        "type": "action",
+        "name": "remove-latency-toxic",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "remove_toxic",
+          "arguments": {
+            "proxy": "opensearch-proxy",
+            "toxic_name": "latency-toxic"
+          }
+        }
+      },
+      {
+        "type": "action",
+        "name": "delete-proxy",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "delete_proxy",
+          "arguments": {
+            "name": "opensearch-proxy"
+          }
+        }
+      }
+    ],
+    "dry": null
+  },
+  "start": "2026-05-16T15:23:52.585935+00:00",
+  "status": "completed",
+  "deviated": false,
+  "steady_states": {
+    "before": null,
+    "after": null,
+    "during": []
+  },
+  "run": [
+    {
+      "activity": {
+        "type": "action",
+        "name": "create-proxy",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "create_proxy",
+          "arguments": {
+            "name": "opensearch-proxy",
+            "listen": "0.0.0.0:9201",
+            "upstream": "opensearch:9200"
+          }
+        }
+      },
+      "output": {
+        "name": "opensearch-proxy",
+        "listen": "[::]:9201",
+        "upstream": "opensearch:9200",
+        "enabled": true,
+        "toxics": []
+      },
+      "start": "2026-05-16T15:23:52.587902+00:00",
+      "status": "succeeded",
+      "end": "2026-05-16T15:23:52.616797+00:00",
+      "duration": 0.028895
+    },
+    {
+      "activity": {
+        "type": "probe",
+        "name": "check-proxy-works",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "wait_for_http_ok",
+          "arguments": {
+            "url": "http://localhost:9201/_cluster/health",
+            "timeout": 30
+          }
+        }
+      },
+      "output": true,
+      "start": "2026-05-16T15:23:52.618448+00:00",
+      "status": "succeeded",
+      "end": "2026-05-16T15:23:52.666772+00:00",
+      "duration": 0.048324
+    },
+    {
+      "activity": {
+        "type": "action",
+        "name": "add-latency-toxic",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "create_toxic",
+          "arguments": {
+            "proxy": "opensearch-proxy",
+            "toxic_type": "latency",
+            "toxic_name": "latency-toxic",
+            "attributes": {
+              "latency": 2000,
+              "jitter": 50
+            }
+          }
+        }
+      },
+      "output": {
+        "attributes": {
+          "latency": 2000,
+          "jitter": 50
+        },
+        "name": "latency-toxic",
+        "type": "latency",
+        "stream": "downstream",
+        "toxicity": 1
+      },
+      "start": "2026-05-16T15:23:52.667639+00:00",
+      "status": "succeeded",
+      "end": "2026-05-16T15:23:52.696219+00:00",
+      "duration": 0.02858
+    },
+    {
+      "activity": {
+        "type": "probe",
+        "name": "probe-slow-response",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "check_health_up",
+          "arguments": {
+            "url": "http://localhost:9201/_cluster/health",
+            "timeout": 10
+          }
+        }
+      },
+      "output": false,
+      "start": "2026-05-16T15:23:52.697129+00:00",
+      "status": "succeeded",
+      "end": "2026-05-16T15:23:54.778257+00:00",
+      "duration": 2.081128
+    },
+    {
+      "activity": {
+        "type": "action",
+        "name": "hold-latency-window",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "sleep_for",
+          "arguments": {
+            "seconds": 20
+          }
+        }
+      },
+      "output": true,
+      "start": "2026-05-16T15:23:54.781412+00:00",
+      "status": "succeeded",
+      "end": "2026-05-16T15:24:14.789835+00:00",
+      "duration": 20.008423
+    },
+    {
+      "activity": {
+        "type": "action",
+        "name": "remove-latency-toxic",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "remove_toxic",
+          "arguments": {
+            "proxy": "opensearch-proxy",
+            "toxic_name": "latency-toxic"
+          }
+        }
+      },
+      "output": true,
+      "start": "2026-05-16T15:24:14.793095+00:00",
+      "status": "succeeded",
+      "end": "2026-05-16T15:24:14.924234+00:00",
+      "duration": 0.131139
+    },
+    {
+      "activity": {
+        "type": "action",
+        "name": "delete-proxy",
+        "provider": {
+          "type": "python",
+          "module": "activities",
+          "func": "delete_proxy",
+          "arguments": {
+            "name": "opensearch-proxy"
+          }
+        }
+      },
+      "output": true,
+      "start": "2026-05-16T15:24:14.927307+00:00",
+      "status": "succeeded",
+      "end": "2026-05-16T15:24:15.015707+00:00",
+      "duration": 0.0884
+    }
+  ],
+  "rollbacks": [],
+  "end": "2026-05-16T15:24:15.017554+00:00",
+  "duration": 22.431663036346436
+}

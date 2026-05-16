@@ -95,8 +95,8 @@ services:
     container_name: observability_opensearch
     environment:
       - discovery.type=single-node
+      - plugins.security.disabled=true
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin@123456
     ports:
       - 9200:9200   # OpenSearch API
       - 9600:9600   # Performance Analyzer
@@ -110,11 +110,17 @@ services:
     ports:
       - 5601:5601   # Dashboard UI
     environment:
-      - OPENSEARCH_HOSTS=["https://opensearch:9200"]
-      - OPENSEARCH_USERNAME=admin
-      - OPENSEARCH_PASSWORD=Admin@123456
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
     depends_on:
       - opensearch
+    restart: unless-stopped
+
+  toxiproxy:
+    image: shopify/toxiproxy:2.1.4
+    container_name: observability_toxiproxy
+    ports:
+      - 8474:8474   # Toxiproxy REST API
+      - 9201:9201   # OpenSearch proxy for host-based backend traffic
     restart: unless-stopped
 
 volumes:
