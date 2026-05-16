@@ -13,7 +13,11 @@ scrape_configs:
       - targets: ['localhost:9090']
 
 alerting:
-  alertmanagers: []
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
 
-# Optional: you can add rule_files: - 'rules/*.yml' if you create alert rules
+rule_files:
+  - 'rules/alert_rules.yml'
+
 

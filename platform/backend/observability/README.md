@@ -42,8 +42,10 @@ docker compose up -d
 ```
 
 Optional additions
-- Add Alertmanager service and rules in `prometheus/prometheus.yml`
+- Alertmanager is included (port 9093) and Prometheus alert rules are provided at `prometheus/rules/alert_rules.yml`.
+- Grafana dashboards are persisted in `grafana/dashboards` and auto-provisioned via `grafana/provisioning` (extended dashboard included).
 - Add persistent volumes and backup for Grafana and Prometheus data
 - Add Tempo or OTEL collector for richer tracing pipelines
+
 
 
