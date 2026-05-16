@@ -11,3 +11,10 @@ spring:
   docker:
     compose:
       enabled: false
+
+platform:
+  event-publishing:
+    mode: in-process  # Options: in-process, kafka, outbox
+    kafka:
+      enabled: false  # Set to true to enable Kafka publishing
+

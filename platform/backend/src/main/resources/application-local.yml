@@ -17,3 +17,8 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+
+platform:
+  event-publishing:
+    kafka:
+      enabled: false  # Disable Kafka for local development

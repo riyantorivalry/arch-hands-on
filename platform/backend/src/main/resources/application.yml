@@ -15,6 +15,37 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+   #Phase 2: Redis configuration (disabled for local dev without Docker)
+  data:
+     redis:
+       host: localhost
+       port: 6379
+       timeout: 2000ms
+       lettuce:
+         pool:
+           max-active: 8
+           max-idle: 8
+           min-idle: 0
+
+   #Phase 2: Kafka configuration (disabled for local dev without Docker)
+  kafka:
+     bootstrap-servers: localhost:9092
+     producer:
+       key-serializer: org.apache.kafka.common.serialization.StringSerializer
+       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+       acks: all
+       retries: 3
+     consumer:
+       group-id: platform-backend
+       auto-offset-reset: earliest
+       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  # Disable Docker Compose for local development
+  docker:
+    compose:
+      enabled: false
+
 management:
   endpoints:
     web:
@@ -27,6 +58,13 @@ management:
 
 server:
   shutdown: graceful
+
+# Phase 2: Platform-specific configuration
+platform:
+  event-publishing:
+    mode: outbox  # Options: in-process, kafka, outbox
+    kafka:
+      enabled: false  # Set to true to enable Kafka publishing
 
 logging:
   pattern:

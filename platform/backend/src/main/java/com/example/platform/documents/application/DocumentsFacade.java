@@ -1,5 +1,6 @@
 package com.example.platform.documents.application;
 
+import com.example.platform.analytics.application.AnalyticsService;
 import com.example.platform.common.audit.AuditLogger;
 import com.example.platform.common.domain.DomainEventPublisher;
 import com.example.platform.identityaccess.application.AuthorizationService;
@@ -28,6 +29,7 @@ public class DocumentsFacade {
     private final AuditLogger auditLogger;
     private final AuthorizationService authorizationService;
     private final DomainEventPublisher domainEventPublisher;
+    private final AnalyticsService analyticsService;
 
     public DocumentsFacade(
             DocumentRepository documentRepository,
@@ -35,7 +37,8 @@ public class DocumentsFacade {
             MembershipRepository membershipRepository,
             AuditLogger auditLogger,
             AuthorizationService authorizationService,
-            DomainEventPublisher domainEventPublisher
+            DomainEventPublisher domainEventPublisher,
+            AnalyticsService analyticsService
     ) {
         this.documentRepository = documentRepository;
         this.documentCommentRepository = documentCommentRepository;
@@ -43,6 +46,7 @@ public class DocumentsFacade {
         this.auditLogger = auditLogger;
         this.authorizationService = authorizationService;
         this.domainEventPublisher = domainEventPublisher;
+        this.analyticsService = analyticsService;
     }
 
     @Transactional
@@ -76,6 +80,18 @@ public class DocumentsFacade {
         return documentRepository.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId).stream()
                 .map(this::toDocumentView)
                 .toList();
+    }
+
+    public List<DocumentView> searchDocuments(String workspaceId, String query) {
+        List<DocumentView> results = documentRepository.findByWorkspaceIdAndTitleContainingOrContentContainingOrderByUpdatedAtDesc(
+                workspaceId, query, query).stream()
+                .map(this::toDocumentView)
+                .toList();
+
+        // Track search analytics
+        analyticsService.trackSearch(query, results.size());
+
+        return results;
     }
 
     public DocumentView getDocument(String documentId) {

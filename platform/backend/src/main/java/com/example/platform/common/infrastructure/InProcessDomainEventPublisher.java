@@ -5,6 +5,7 @@ import com.example.platform.common.domain.DomainEventPublisher;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +22,11 @@ import org.springframework.stereotype.Component;
  * without changing the interface.
  */
 @Component
+@ConditionalOnProperty(
+        name = "platform.event-publishing.mode",
+        havingValue = "in-process",
+        matchIfMissing = false
+)
 public class InProcessDomainEventPublisher implements DomainEventPublisher {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(InProcessDomainEventPublisher.class);

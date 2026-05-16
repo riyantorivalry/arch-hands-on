@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -35,6 +36,14 @@ public class DocumentsController {
     @GetMapping("/workspaces/{workspaceId}/documents")
     public List<DocumentsFacade.DocumentView> listDocuments(@PathVariable String workspaceId) {
         return facade.listDocuments(workspaceId);
+    }
+
+    @GetMapping("/workspaces/{workspaceId}/documents/search")
+    public List<DocumentsFacade.DocumentView> searchDocuments(
+            @PathVariable String workspaceId,
+            @RequestParam String query
+    ) {
+        return facade.searchDocuments(workspaceId, query);
     }
 
     @GetMapping("/documents/{documentId}")

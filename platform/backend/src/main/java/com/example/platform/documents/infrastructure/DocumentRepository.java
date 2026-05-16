@@ -7,4 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface DocumentRepository extends JpaRepository<DocumentEntity, String> {
 
     List<DocumentEntity> findByWorkspaceIdOrderByUpdatedAtDesc(String workspaceId);
+
+    List<DocumentEntity> findByWorkspaceIdAndTitleContainingOrContentContainingOrderByUpdatedAtDesc(
+            String workspaceId, String titleQuery, String contentQuery);
 }
