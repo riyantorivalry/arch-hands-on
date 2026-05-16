@@ -1,0 +1,32 @@
+type Query {
+  task(id: ID!): Task
+  tasks(workspaceId: ID!): [Task]
+  document(id: ID!): Document
+  documents(workspaceId: ID!): [Document]
+  dashboard(workspaceId: ID!): DashboardView
+}
+
+type Task {
+  taskId: ID!
+  workspaceId: ID
+  title: String
+  description: String
+  status: String
+  assigneeUserId: String
+  createdByUserId: String
+}
+
+type Document {
+  documentId: ID!
+  workspaceId: ID
+  title: String
+  content: String
+  status: String
+  createdByUserId: String
+}
+
+type DashboardView {
+  tasks: [Task]
+  documents: [Document]
+}
+

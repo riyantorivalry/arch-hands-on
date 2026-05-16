@@ -1,0 +1,51 @@
+package com.example.platform.graphql;
+
+import com.example.platform.documents.application.DocumentsFacade;
+import com.example.platform.tasks.application.TasksFacade;
+import java.util.List;
+import org.springframework.graphql.data.method.annotation.Argument;
+import org.springframework.graphql.data.method.annotation.QueryMapping;
+import org.springframework.stereotype.Controller;
+
+@Controller
+public class GraphqlController {
+
+    private final TasksFacade tasksFacade;
+    private final DocumentsFacade documentsFacade;
+
+    public GraphqlController(TasksFacade tasksFacade, DocumentsFacade documentsFacade) {
+        this.tasksFacade = tasksFacade;
+        this.documentsFacade = documentsFacade;
+    }
+
+    @QueryMapping
+    public TasksFacade.TaskView task(@Argument String id) {
+        return tasksFacade.getTask(id);
+    }
+
+    @QueryMapping
+    public List<TasksFacade.TaskView> tasks(@Argument String workspaceId) {
+        return tasksFacade.listTasks(workspaceId);
+    }
+
+    @QueryMapping
+    public DocumentsFacade.DocumentView document(@Argument String id) {
+        return documentsFacade.getDocument(id);
+    }
+
+    @QueryMapping
+    public List<DocumentsFacade.DocumentView> documents(@Argument String workspaceId) {
+        return documentsFacade.listDocuments(workspaceId);
+    }
+
+    @QueryMapping
+    public DashboardView dashboard(@Argument String workspaceId) {
+        List<TasksFacade.TaskView> tasks = tasksFacade.listTasks(workspaceId);
+        List<DocumentsFacade.DocumentView> documents = documentsFacade.listDocuments(workspaceId);
+        return new DashboardView(tasks, documents);
+    }
+
+    public static record DashboardView(List<TasksFacade.TaskView> tasks, List<DocumentsFacade.DocumentView> documents) {
+    }
+}
+
