@@ -76,7 +76,8 @@ export function AppShell() {
   });
   const [documentEditForm, setDocumentEditForm] = useState({
     title: "",
-    content: ""
+    content: "",
+    status: "DRAFT"
   });
   const [taskForm, setTaskForm] = useState({
     title: "Bootstrap API",
@@ -126,7 +127,8 @@ export function AppShell() {
     if (selectedDocument) {
       setDocumentEditForm({
         title: selectedDocument.title,
-        content: selectedDocument.content
+        content: selectedDocument.content,
+        status: selectedDocument.status
       });
     }
   }, [documents, selectedDocumentId]);
@@ -322,7 +324,13 @@ export function AppShell() {
     }
     try {
       setError("");
-      const updated = await updateDocument(session, selectedDocument.documentId, documentEditForm.title, documentEditForm.content);
+      const updated = await updateDocument(
+        session,
+        selectedDocument.documentId,
+        documentEditForm.title,
+        documentEditForm.content,
+        documentEditForm.status
+      );
       setDocuments((current) => current.map((item) => (item.documentId === updated.documentId ? updated : item)));
       setStatus(`Document updated: ${updated.title}`);
     } catch (cause) {
@@ -642,6 +650,12 @@ export function AppShell() {
                     value={documentEditForm.content}
                     onChange={(value) => setDocumentEditForm({ ...documentEditForm, content: value })}
                   />
+                  <SelectField
+                    label="Status"
+                    value={documentEditForm.status}
+                    options={["DRAFT", "IN_REVIEW", "ACTIVE", "ARCHIVED"]}
+                    onChange={(value) => setDocumentEditForm({ ...documentEditForm, status: value })}
+                  />
                   <div className="actions">
                     <button className="button button-primary" disabled={!canUpdateSelectedDocument} type="submit">
                       Update Document
@@ -678,7 +692,7 @@ export function AppShell() {
                   <SelectField
                     label="Status"
                     value={taskEditForm.status}
-                    options={["TODO", "IN_PROGRESS", "DONE"]}
+                    options={["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELED"]}
                     onChange={(value) => setTaskEditForm({ ...taskEditForm, status: value })}
                   />
                   <Field

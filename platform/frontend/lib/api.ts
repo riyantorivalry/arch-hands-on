@@ -122,11 +122,11 @@ export async function createDocument(session: SessionState, title: string, conte
   });
 }
 
-export async function updateDocument(session: SessionState, documentId: string, title: string, content: string) {
+export async function updateDocument(session: SessionState, documentId: string, title: string, content: string, status: string) {
   return apiRequest<DocumentItem>(`/documents/${documentId}`, {
     method: "PATCH",
     token: session.token,
-    body: { title, content }
+    body: { title, content, status }
   });
 }
 
