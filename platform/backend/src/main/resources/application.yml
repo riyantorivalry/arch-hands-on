@@ -26,6 +26,12 @@ spring:
            max-active: 8
            max-idle: 8
            min-idle: 0
+     mongodb:
+       host: localhost
+       port: 27017
+       database: platform_analytics
+      elasticsearch:
+        uris: http://localhost:9200
 
    #Phase 2: Kafka configuration (disabled for local dev without Docker)
   kafka:

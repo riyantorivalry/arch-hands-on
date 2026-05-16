@@ -1,7 +1,7 @@
 package com.example.platform.analytics.application;
 
-import com.example.platform.analytics.domain.AnalyticsEventEntity;
-import com.example.platform.analytics.infrastructure.AnalyticsEventRepository;
+import com.example.platform.analytics.domain.AnalyticsEventDocument;
+import com.example.platform.analytics.infrastructure.AnalyticsEventMongoRepository;
 import com.example.platform.common.web.RequestContext;
 import com.example.platform.common.web.RequestContexts;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,10 +25,10 @@ public class AnalyticsService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AnalyticsService.class);
 
-    private final AnalyticsEventRepository repository;
+    private final AnalyticsEventMongoRepository repository;
     private final ObjectMapper objectMapper;
 
-    public AnalyticsService(AnalyticsEventRepository repository, ObjectMapper objectMapper) {
+    public AnalyticsService(AnalyticsEventMongoRepository repository, ObjectMapper objectMapper) {
         this.repository = repository;
         this.objectMapper = objectMapper;
     }
@@ -41,7 +41,7 @@ public class AnalyticsService {
             String eventId = "analytics-" + UUID.randomUUID().toString();
             JsonNode serializedData = objectMapper.valueToTree(eventData);
 
-            AnalyticsEventEntity event = new AnalyticsEventEntity(
+            AnalyticsEventDocument event = new AnalyticsEventDocument(
                     eventId,
                     context.tenantId(),
                     context.userId(),
@@ -64,7 +64,7 @@ public class AnalyticsService {
         }
     }
 
-    public List<AnalyticsEventEntity> getEventsForTenant(String tenantId, Instant start, Instant end) {
+    public List<com.example.platform.analytics.domain.AnalyticsEventDocument> getEventsForTenant(String tenantId, Instant start, Instant end) {
         return repository.findByTenantIdAndCreatedAtBetweenOrderByCreatedAtDesc(tenantId, start, end);
     }
 
@@ -73,7 +73,9 @@ public class AnalyticsService {
     }
 
     public List<String> getEventTypesForTenant(String tenantId) {
-        return repository.findDistinctEventTypesByTenantId(tenantId);
+        // Mongo repository returns documents with event_type field; extract distinct types
+        var docs = repository.findDistinctEventTypesByTenantId(tenantId);
+        return docs.stream().map(d -> d.getEventType()).distinct().sorted().toList();
     }
 
     // Convenience methods for common events

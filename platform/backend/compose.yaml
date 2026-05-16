@@ -57,6 +57,20 @@ services:
       timeout: 10s
       retries: 5
 
+  mongodb:
+    image: mongo:7
+    container_name: platform-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: secretpassword
+    volumes:
+      - mongo_data:/data/db
+
+
 volumes:
   postgres-data:
   redis-data:
+  mongo_data:

@@ -4,6 +4,7 @@ This folder contains a self-contained observability stack you can run locally to
 
 Contents
 - `docker-compose.yml` - launches Prometheus, Grafana, Loki, Promtail and Jaeger
+- OpenSearch and OpenSearch Dashboards for document/log search
 - `prometheus/prometheus.yml` - Prometheus scrape configuration
 - `grafana/provisioning` - Grafana provisioning for datasources and dashboards
 - `grafana/dashboards` - example dashboard JSON
@@ -25,6 +26,7 @@ Open the following UIs:
 - Prometheus: http://localhost:9090
 - Loki (API): http://localhost:3100
 - Jaeger UI: http://localhost:16686
+- OpenSearch Dashboards: http://localhost:5601 (user: admin, password: Admin@123456)
 
 Verify:
 - Prometheus should have `platform-backend` under Status -> Targets

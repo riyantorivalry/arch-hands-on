@@ -90,12 +90,40 @@ services:
       - tempo-data:/var/tempo
     restart: unless-stopped
 
+  opensearch:
+    image: opensearchproject/opensearch:2.8.0
+    container_name: observability_opensearch
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin@123456
+    ports:
+      - 9200:9200   # OpenSearch API
+      - 9600:9600   # Performance Analyzer
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    restart: unless-stopped
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.8.0
+    container_name: observability_opensearch_dashboards
+    ports:
+      - 5601:5601   # Dashboard UI
+    environment:
+      - OPENSEARCH_HOSTS=["https://opensearch:9200"]
+      - OPENSEARCH_USERNAME=admin
+      - OPENSEARCH_PASSWORD=Admin@123456
+    depends_on:
+      - opensearch
+    restart: unless-stopped
+
 volumes:
   prometheus-data:
   grafana-data:
   loki-data:
   alertmanager-data:
   tempo-data:
+  opensearch-data:
 
 
 

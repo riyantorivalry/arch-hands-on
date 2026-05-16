@@ -11,6 +11,7 @@ import com.example.platform.documents.domain.DocumentStatus;
 import com.example.platform.documents.domain.DocumentUpdatedEvent;
 import com.example.platform.documents.infrastructure.DocumentCommentRepository;
 import com.example.platform.documents.infrastructure.DocumentRepository;
+import com.example.platform.documents.infrastructure.DocumentSearchRepository;
 import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import java.text.Normalizer;
@@ -30,6 +31,7 @@ public class DocumentsFacade {
     private final AuthorizationService authorizationService;
     private final DomainEventPublisher domainEventPublisher;
     private final AnalyticsService analyticsService;
+    private final DocumentSearchRepository documentSearchRepository;
 
     public DocumentsFacade(
             DocumentRepository documentRepository,
@@ -38,7 +40,8 @@ public class DocumentsFacade {
             AuditLogger auditLogger,
             AuthorizationService authorizationService,
             DomainEventPublisher domainEventPublisher,
-            AnalyticsService analyticsService
+            AnalyticsService analyticsService,
+            DocumentSearchRepository documentSearchRepository
     ) {
         this.documentRepository = documentRepository;
         this.documentCommentRepository = documentCommentRepository;
@@ -47,6 +50,7 @@ public class DocumentsFacade {
         this.authorizationService = authorizationService;
         this.domainEventPublisher = domainEventPublisher;
         this.analyticsService = analyticsService;
+        this.documentSearchRepository = documentSearchRepository;
     }
 
     @Transactional
@@ -63,6 +67,9 @@ public class DocumentsFacade {
                 userId
         ));
         auditLogger.logWrite("documents", "create", "document", saved.getDocumentId(), "SUCCESS");
+
+        // Index in OpenSearch for full-text search
+        indexDocument(saved, membership.getTenantId());
 
         // Publish domain event
         domainEventPublisher.publish(new DocumentCreatedEvent(
@@ -83,9 +90,19 @@ public class DocumentsFacade {
     }
 
     public List<DocumentView> searchDocuments(String workspaceId, String query) {
-        List<DocumentView> results = documentRepository.findByWorkspaceIdAndTitleContainingOrContentContainingOrderByUpdatedAtDesc(
-                workspaceId, query, query).stream()
-                .map(this::toDocumentView)
+        // Use OpenSearch for full-text search
+        List<DocumentView> results = documentSearchRepository
+                .findByWorkspaceIdAndTitleContainsOrContentContains(workspaceId, query, query)
+                .stream()
+                .map(doc -> new DocumentView(
+                        doc.getDocumentId(),
+                        doc.getWorkspaceId(),
+                        doc.getTitle(),
+                        doc.getContent(),
+                        doc.getStatus(),
+                        doc.getCreatedByUserId(),
+                        doc.getLastModifiedByUserId()
+                ))
                 .toList();
 
         // Track search analytics
@@ -108,6 +125,9 @@ public class DocumentsFacade {
         authorizationService.requireOwnerOrAdminOrResourceOwner(membership, document.getCreatedByUserId());
         document.update(title, content, userId);
         auditLogger.logWrite("documents", "update", "document", document.getDocumentId(), "SUCCESS");
+
+        // Update index in OpenSearch
+        indexDocument(document, membership.getTenantId());
 
         // Publish domain event
         domainEventPublisher.publish(new DocumentUpdatedEvent(
@@ -177,5 +197,25 @@ public class DocumentsFacade {
             throw new IllegalStateException("Membership is not active for user " + userId);
         }
         return membership;
+    }
+
+    private void indexDocument(DocumentEntity document, String tenantId) {
+        try {
+            var searchDoc = new com.example.platform.documents.domain.DocumentSearchDocument(
+                    document.getDocumentId(),
+                    tenantId,
+                    document.getWorkspaceId(),
+                    document.getTitle(),
+                    document.getContent(),
+                    document.getStatus().name(),
+                    document.getCreatedByUserId(),
+                    document.getLastModifiedByUserId(),
+                    document.getCreatedAt(),
+                    document.getUpdatedAt()
+            );
+            documentSearchRepository.save(searchDoc);
+        } catch (Exception e) {
+            auditLogger.logWrite("documents", "search_index", "document", document.getDocumentId(), "FAILED: " + e.getMessage());
+        }
     }
 }
