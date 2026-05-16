@@ -105,6 +105,8 @@
         <root level="${LOG_LEVEL}">
             <appender-ref ref="CONSOLE"/>
             <appender-ref ref="ERROR_FILE"/>
+            <!-- Also write structured JSON logs in local/dev so promtail can collect them during development -->
+            <appender-ref ref="ASYNC_JSON"/>
         </root>
     </springProfile>
 
