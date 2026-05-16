@@ -1,0 +1,1403 @@
+openapi: 3.1.0
+info:
+  title: Collaboration Platform API
+  version: 0.0.1-SNAPSHOT
+  description: REST API contract for the modular collaboration platform backend.
+servers:
+  - url: http://localhost:8080
+    description: Local backend
+tags:
+  - name: Tenant Management
+  - name: Identity Access
+  - name: Messaging
+  - name: Documents
+  - name: Tasks
+  - name: Platform
+  - name: GraphQL
+security:
+  - bearerAuth: []
+paths:
+  /api/tenants:
+    post:
+      tags:
+        - Tenant Management
+      summary: Bootstrap a tenant, default workspace, owner user, and owner membership.
+      operationId: createTenant
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantRequest"
+      responses:
+        "200":
+          description: Tenant bootstrap result.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/tenants/{tenantId}/workspaces:
+    post:
+      tags:
+        - Tenant Management
+      summary: Create a workspace in an existing tenant.
+      operationId: createWorkspace
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkspaceRequest"
+      responses:
+        "200":
+          description: Created workspace.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/workspaces/{workspaceId}:
+    get:
+      tags:
+        - Tenant Management
+      summary: Get workspace details.
+      operationId: getWorkspace
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Workspace details.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/workspaces/{workspaceId}/settings:
+    patch:
+      tags:
+        - Tenant Management
+      summary: Update workspace settings.
+      description: Current implementation returns the workspace view without accepting a request body.
+      operationId: updateWorkspaceSettings
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Updated workspace.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/auth/login:
+    post:
+      tags:
+        - Identity Access
+      summary: Create a user session for a workspace.
+      operationId: login
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login result with bearer token.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/auth/logout:
+    post:
+      tags:
+        - Identity Access
+      summary: Revoke the current user session.
+      operationId: logout
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Logout status.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/me:
+    get:
+      tags:
+        - Identity Access
+      summary: Get the current authenticated actor.
+      operationId: getCurrentUser
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current actor.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/workspaces/{workspaceId}/memberships/me:
+    get:
+      tags:
+        - Identity Access
+      summary: Get the current actor's membership in a workspace.
+      operationId: getCurrentMembership
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Current workspace membership.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/workspaces/{workspaceId}/memberships:
+    post:
+      tags:
+        - Identity Access
+      summary: Assign a user membership to a workspace.
+      operationId: assignMembership
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignMembershipRequest"
+      responses:
+        "200":
+          description: Assigned membership.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipAssignmentView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/workspaces/{workspaceId}/channels:
+    get:
+      tags:
+        - Messaging
+      summary: List workspace channels.
+      operationId: listChannels
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Channels in name order.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChannelView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags:
+        - Messaging
+      summary: Create a workspace channel.
+      operationId: createChannel
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChannelRequest"
+      responses:
+        "200":
+          description: Created channel.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/channels/{channelId}/messages:
+    get:
+      tags:
+        - Messaging
+      summary: List messages in a channel.
+      operationId: listMessages
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/ChannelId"
+      responses:
+        "200":
+          description: Messages in creation order.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MessageView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags:
+        - Messaging
+      summary: Post a message to a channel.
+      operationId: postMessage
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/ChannelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostMessageRequest"
+      responses:
+        "200":
+          description: Posted message.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/messages/{messageId}/replies:
+    post:
+      tags:
+        - Messaging
+      summary: Reply to a message.
+      operationId: replyToMessage
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/MessageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostMessageRequest"
+      responses:
+        "200":
+          description: Reply message.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/workspaces/{workspaceId}/documents:
+    get:
+      tags:
+        - Documents
+      summary: List workspace documents.
+      operationId: listDocuments
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Documents in update order.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags:
+        - Documents
+      summary: Create a document.
+      operationId: createDocument
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDocumentRequest"
+      responses:
+        "200":
+          description: Created document.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/workspaces/{workspaceId}/documents/search:
+    get:
+      tags:
+        - Documents
+      summary: Search workspace documents.
+      operationId: searchDocuments
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search text matched against document title and content.
+      responses:
+        "200":
+          description: Search results.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/documents/{documentId}:
+    get:
+      tags:
+        - Documents
+      summary: Get document details.
+      operationId: getDocument
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: Document details.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags:
+        - Documents
+      summary: Update document content and status.
+      operationId: updateDocument
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/DocumentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDocumentRequest"
+      responses:
+        "200":
+          description: Updated document.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/documents/{documentId}/comments:
+    post:
+      tags:
+        - Documents
+      summary: Add a document comment.
+      operationId: addDocumentComment
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/DocumentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddCommentRequest"
+      responses:
+        "200":
+          description: Created document comment.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentCommentView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/workspaces/{workspaceId}/tasks:
+    get:
+      tags:
+        - Tasks
+      summary: List workspace tasks.
+      operationId: listTasks
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: Tasks in update order.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags:
+        - Tasks
+      summary: Create a task.
+      operationId: createTask
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "200":
+          description: Created task.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/tasks/{taskId}:
+    get:
+      tags:
+        - Tasks
+      summary: Get task details.
+      operationId: getTask
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Task details.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags:
+        - Tasks
+      summary: Update task details and status.
+      operationId: updateTask
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+      responses:
+        "200":
+          description: Updated task.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/tasks/{taskId}/comments:
+    post:
+      tags:
+        - Tasks
+      summary: Add a task comment.
+      operationId: addTaskComment
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTaskCommentRequest"
+      responses:
+        "200":
+          description: Created task comment.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskCommentView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/platform/info:
+    get:
+      tags:
+        - Platform
+      summary: Get backend service and module information.
+      operationId: getPlatformInfo
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Platform metadata.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformInfoResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /graphql:
+    post:
+      tags:
+        - GraphQL
+      summary: Execute a GraphQL operation.
+      description: Spring GraphQL endpoint for task, document, and dashboard read queries.
+      operationId: executeGraphql
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GraphqlRequest"
+      responses:
+        "200":
+          description: GraphQL execution result.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphqlResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: session-token
+
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Optional client-supplied correlation ID echoed by the backend.
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+    ChannelId:
+      name: channelId
+      in: path
+      required: true
+      schema:
+        type: string
+    MessageId:
+      name: messageId
+      in: path
+      required: true
+      schema:
+        type: string
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  headers:
+    CorrelationId:
+      description: Correlation ID assigned to the request.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request or unsupported domain value.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Missing, malformed, expired, or revoked bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Authenticated actor is not allowed to perform the operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Request conflicts with current domain state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    CreateTenantRequest:
+      type: object
+      required:
+        - tenantName
+        - workspaceName
+        - ownerUserId
+        - ownerEmail
+        - ownerDisplayName
+      properties:
+        tenantName:
+          type: string
+          minLength: 1
+        workspaceName:
+          type: string
+          minLength: 1
+        ownerUserId:
+          type: string
+          minLength: 1
+        ownerEmail:
+          type: string
+          minLength: 1
+        ownerDisplayName:
+          type: string
+          minLength: 1
+
+    CreateWorkspaceRequest:
+      type: object
+      required:
+        - workspaceName
+      properties:
+        workspaceName:
+          type: string
+          minLength: 1
+
+    TenantView:
+      type: object
+      required:
+        - tenantId
+        - workspaceId
+        - tenantName
+        - workspaceName
+        - status
+      properties:
+        tenantId:
+          type: string
+        workspaceId:
+          type: string
+        tenantName:
+          type: string
+        workspaceName:
+          type: string
+        status:
+          $ref: "#/components/schemas/TenantStatus"
+
+    WorkspaceView:
+      type: object
+      required:
+        - workspaceId
+        - tenantId
+        - workspaceName
+        - status
+      properties:
+        workspaceId:
+          type: string
+        tenantId:
+          type: string
+        workspaceName:
+          type: string
+        status:
+          $ref: "#/components/schemas/WorkspaceStatus"
+
+    LoginRequest:
+      type: object
+      required:
+        - userId
+        - workspaceId
+      properties:
+        userId:
+          type: string
+          minLength: 1
+        workspaceId:
+          type: string
+          minLength: 1
+
+    LoginResponse:
+      type: object
+      required:
+        - token
+        - userId
+        - tenantId
+        - workspaceId
+        - expiresAt
+      properties:
+        token:
+          type: string
+        userId:
+          type: string
+        tenantId:
+          type: string
+        workspaceId:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    LogoutResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: logged-out
+
+    MeResponse:
+      type: object
+      required:
+        - userId
+        - displayName
+        - email
+        - workspaceId
+        - tenantId
+        - role
+      properties:
+        userId:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+        workspaceId:
+          type: string
+        tenantId:
+          type: string
+        role:
+          $ref: "#/components/schemas/MembershipRole"
+
+    MembershipResponse:
+      type: object
+      required:
+        - userId
+        - workspaceId
+        - tenantId
+        - role
+      properties:
+        userId:
+          type: string
+        workspaceId:
+          type: string
+        tenantId:
+          type: string
+        role:
+          $ref: "#/components/schemas/MembershipRole"
+
+    AssignMembershipRequest:
+      type: object
+      required:
+        - userId
+        - email
+        - displayName
+        - role
+      properties:
+        userId:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          minLength: 1
+        displayName:
+          type: string
+          minLength: 1
+        role:
+          $ref: "#/components/schemas/MembershipRole"
+
+    MembershipAssignmentView:
+      type: object
+      required:
+        - tenantId
+        - workspaceId
+        - userId
+        - role
+        - status
+      properties:
+        tenantId:
+          type: string
+        workspaceId:
+          type: string
+        userId:
+          type: string
+        role:
+          $ref: "#/components/schemas/MembershipRole"
+        status:
+          $ref: "#/components/schemas/MembershipStatus"
+
+    CreateChannelRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+
+    PostMessageRequest:
+      type: object
+      required:
+        - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+
+    ChannelView:
+      type: object
+      required:
+        - channelId
+        - workspaceId
+        - name
+      properties:
+        channelId:
+          type: string
+        workspaceId:
+          type: string
+        name:
+          type: string
+
+    MessageView:
+      type: object
+      required:
+        - messageId
+        - channelId
+        - authorUserId
+        - body
+      properties:
+        messageId:
+          type: string
+        channelId:
+          type: string
+        authorUserId:
+          type: string
+        body:
+          type: string
+        parentMessageId:
+          type:
+            - string
+            - "null"
+
+    CreateDocumentRequest:
+      type: object
+      required:
+        - title
+        - content
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        content:
+          type: string
+          minLength: 1
+          maxLength: 12000
+
+    UpdateDocumentRequest:
+      type: object
+      required:
+        - title
+        - content
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        content:
+          type: string
+          minLength: 1
+          maxLength: 12000
+        status:
+          $ref: "#/components/schemas/DocumentStatus"
+
+    AddCommentRequest:
+      type: object
+      required:
+        - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+
+    DocumentView:
+      type: object
+      required:
+        - documentId
+        - workspaceId
+        - title
+        - content
+        - status
+        - createdByUserId
+        - lastModifiedByUserId
+      properties:
+        documentId:
+          type: string
+        workspaceId:
+          type: string
+        title:
+          type: string
+        content:
+          type: string
+        status:
+          $ref: "#/components/schemas/DocumentStatus"
+        createdByUserId:
+          type: string
+        lastModifiedByUserId:
+          type: string
+
+    DocumentCommentView:
+      type: object
+      required:
+        - commentId
+        - documentId
+        - authorUserId
+        - body
+      properties:
+        commentId:
+          type: string
+        documentId:
+          type: string
+        authorUserId:
+          type: string
+        body:
+          type: string
+
+    CreateTaskRequest:
+      type: object
+      required:
+        - title
+        - description
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        assigneeUserId:
+          type:
+            - string
+            - "null"
+
+    UpdateTaskRequest:
+      type: object
+      required:
+        - title
+        - description
+        - status
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        assigneeUserId:
+          type:
+            - string
+            - "null"
+
+    AddTaskCommentRequest:
+      type: object
+      required:
+        - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+
+    TaskView:
+      type: object
+      required:
+        - taskId
+        - workspaceId
+        - title
+        - description
+        - status
+        - createdByUserId
+      properties:
+        taskId:
+          type: string
+        workspaceId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        assigneeUserId:
+          type:
+            - string
+            - "null"
+        createdByUserId:
+          type: string
+
+    TaskCommentView:
+      type: object
+      required:
+        - commentId
+        - taskId
+        - authorUserId
+        - body
+      properties:
+        commentId:
+          type: string
+        taskId:
+          type: string
+        authorUserId:
+          type: string
+        body:
+          type: string
+
+    PlatformInfoResponse:
+      type: object
+      required:
+        - service
+        - version
+        - architectureStyle
+        - modules
+      properties:
+        service:
+          type: string
+          example: platform-backend
+        version:
+          type: string
+          example: 0.0.1-SNAPSHOT
+        architectureStyle:
+          type: string
+          example: modular-monolith
+        modules:
+          type: array
+          items:
+            type: string
+        requestContext:
+          anyOf:
+            - $ref: "#/components/schemas/RequestContextResponse"
+            - type: "null"
+
+    RequestContextResponse:
+      type: object
+      required:
+        - correlationId
+      properties:
+        tenantId:
+          type:
+            - string
+            - "null"
+        workspaceId:
+          type:
+            - string
+            - "null"
+        userId:
+          type:
+            - string
+            - "null"
+        correlationId:
+          type: string
+
+    GraphqlRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: GraphQL document.
+          example: "query($workspaceId: ID!) { tasks(workspaceId: $workspaceId) { taskId title status } }"
+        operationName:
+          type:
+            - string
+            - "null"
+        variables:
+          type: object
+          additionalProperties: true
+
+    GraphqlResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - BAD_REQUEST
+            - CONFLICT
+            - UNAUTHORIZED
+            - FORBIDDEN
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    TenantStatus:
+      type: string
+      enum:
+        - ACTIVE
+
+    WorkspaceStatus:
+      type: string
+      enum:
+        - ACTIVE
+
+    MembershipRole:
+      type: string
+      enum:
+        - OWNER
+        - ADMIN
+        - MEMBER
+
+    MembershipStatus:
+      type: string
+      enum:
+        - ACTIVE
+
+    TaskStatus:
+      type: string
+      enum:
+        - TODO
+        - IN_PROGRESS
+        - BLOCKED
+        - DONE
+        - CANCELED
+
+    DocumentStatus:
+      type: string
+      enum:
+        - DRAFT
+        - IN_REVIEW
+        - ACTIVE
+        - ARCHIVED
