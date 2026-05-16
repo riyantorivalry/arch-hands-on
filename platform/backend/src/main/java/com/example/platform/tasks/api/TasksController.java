@@ -2,7 +2,9 @@ package com.example.platform.tasks.api;
 
 import com.example.platform.common.web.RequestContexts;
 import com.example.platform.tasks.application.TasksFacade;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,7 +29,7 @@ public class TasksController {
     @PostMapping("/workspaces/{workspaceId}/tasks")
     public TasksFacade.TaskView createTask(
             @PathVariable String workspaceId,
-            @RequestBody CreateTaskRequest request
+            @Valid @RequestBody CreateTaskRequest request
     ) {
         return facade.createTask(
                 workspaceId,
@@ -51,7 +53,7 @@ public class TasksController {
     @PatchMapping("/tasks/{taskId}")
     public TasksFacade.TaskView updateTask(
             @PathVariable String taskId,
-            @RequestBody UpdateTaskRequest request
+            @Valid @RequestBody UpdateTaskRequest request
     ) {
         return facade.updateTask(
                 taskId,
@@ -66,26 +68,26 @@ public class TasksController {
     @PostMapping("/tasks/{taskId}/comments")
     public TasksFacade.TaskCommentView addComment(
             @PathVariable String taskId,
-            @RequestBody AddTaskCommentRequest request
+            @Valid @RequestBody AddTaskCommentRequest request
     ) {
         return facade.addComment(taskId, RequestContexts.current().userId(), request.body());
     }
 
     public record CreateTaskRequest(
-            @NotBlank String title,
-            @NotBlank String description,
+            @NotBlank @Size(max = 200) String title,
+            @NotBlank @Size(max = 4000) String description,
             String assigneeUserId
     ) {
     }
 
     public record UpdateTaskRequest(
-            @NotBlank String title,
-            @NotBlank String description,
-            @NotBlank String status,
+            @NotBlank @Size(max = 200) String title,
+            @NotBlank @Size(max = 4000) String description,
+            @NotBlank @Size(max = 32) String status,
             String assigneeUserId
     ) {
     }
 
-    public record AddTaskCommentRequest(@NotBlank String body) {
+    public record AddTaskCommentRequest(@NotBlank @Size(max = 4000) String body) {
     }
 }

@@ -2,7 +2,9 @@ package com.example.platform.documents.api;
 
 import com.example.platform.common.web.RequestContexts;
 import com.example.platform.documents.application.DocumentsFacade;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,7 +30,7 @@ public class DocumentsController {
     @PostMapping("/workspaces/{workspaceId}/documents")
     public DocumentsFacade.DocumentView createDocument(
             @PathVariable String workspaceId,
-            @RequestBody CreateDocumentRequest request
+            @Valid @RequestBody CreateDocumentRequest request
     ) {
         return facade.createDocument(workspaceId, RequestContexts.current().userId(), request.title(), request.content());
     }
@@ -54,25 +56,29 @@ public class DocumentsController {
     @PatchMapping("/documents/{documentId}")
     public DocumentsFacade.DocumentView updateDocument(
             @PathVariable String documentId,
-            @RequestBody UpdateDocumentRequest request
+            @Valid @RequestBody UpdateDocumentRequest request
     ) {
-        return facade.updateDocument(documentId, RequestContexts.current().userId(), request.title(), request.content());
+        return facade.updateDocument(documentId, RequestContexts.current().userId(), request.title(), request.content(), request.status());
     }
 
     @PostMapping("/documents/{documentId}/comments")
     public DocumentsFacade.DocumentCommentView addComment(
             @PathVariable String documentId,
-            @RequestBody AddCommentRequest request
+            @Valid @RequestBody AddCommentRequest request
     ) {
         return facade.addComment(documentId, RequestContexts.current().userId(), request.body());
     }
 
-    public record CreateDocumentRequest(@NotBlank String title, @NotBlank String content) {
+    public record CreateDocumentRequest(@NotBlank @Size(max = 200) String title, @NotBlank @Size(max = 12000) String content) {
     }
 
-    public record UpdateDocumentRequest(@NotBlank String title, @NotBlank String content) {
+    public record UpdateDocumentRequest(
+            @NotBlank @Size(max = 200) String title,
+            @NotBlank @Size(max = 12000) String content,
+            String status
+    ) {
     }
 
-    public record AddCommentRequest(@NotBlank String body) {
+    public record AddCommentRequest(@NotBlank @Size(max = 4000) String body) {
     }
 }

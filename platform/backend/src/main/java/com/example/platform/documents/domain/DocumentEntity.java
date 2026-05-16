@@ -96,9 +96,10 @@ public class DocumentEntity extends AbstractAuditableEntity {
         return lastModifiedByUserId;
     }
 
-    public void update(String title, String content, String modifiedByUserId) {
+    public void update(String title, String content, DocumentStatus status, String modifiedByUserId) {
         this.title = title;
         this.content = content;
+        this.status = status;
         this.lastModifiedByUserId = modifiedByUserId;
     }
 }

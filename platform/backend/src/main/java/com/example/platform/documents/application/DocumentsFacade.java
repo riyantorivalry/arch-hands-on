@@ -3,6 +3,7 @@ package com.example.platform.documents.application;
 import com.example.platform.analytics.application.AnalyticsService;
 import com.example.platform.common.audit.AuditLogger;
 import com.example.platform.common.domain.DomainEventPublisher;
+import com.example.platform.common.web.AuthorizationDeniedException;
 import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.documents.domain.DocumentCommentEntity;
 import com.example.platform.documents.domain.DocumentCreatedEvent;
@@ -12,11 +13,15 @@ import com.example.platform.documents.domain.DocumentUpdatedEvent;
 import com.example.platform.documents.infrastructure.DocumentCommentRepository;
 import com.example.platform.documents.infrastructure.DocumentRepository;
 import com.example.platform.documents.infrastructure.DocumentSearchRepository;
+import com.example.platform.identityaccess.domain.MembershipEntity;
+import com.example.platform.identityaccess.domain.MembershipRole;
 import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import java.text.Normalizer;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -25,6 +30,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class DocumentsFacade {
+
+    private static final int MAX_TITLE_LENGTH = 200;
+    private static final int MAX_CONTENT_LENGTH = 12000;
+    private static final int MIN_REVIEW_CONTENT_LENGTH = 20;
 
     private final DocumentRepository documentRepository;
     private final DocumentCommentRepository documentCommentRepository;
@@ -62,12 +71,14 @@ public class DocumentsFacade {
     @Transactional
     public DocumentView createDocument(String workspaceId, String userId, String title, String content) {
         var membership = requireActiveMembership(workspaceId, userId);
+        String normalizedTitle = requireText("Document title", title, MAX_TITLE_LENGTH);
+        String normalizedContent = requireText("Document content", content, MAX_CONTENT_LENGTH);
         DocumentEntity saved = documentRepository.save(new DocumentEntity(
-                "document-" + slugify(title) + "-" + UUID.randomUUID().toString().substring(0, 8),
+                "document-" + slugify(normalizedTitle) + "-" + UUID.randomUUID().toString().substring(0, 8),
                 membership.getTenantId(),
                 workspaceId,
-                title,
-                content,
+                normalizedTitle,
+                normalizedContent,
                 DocumentStatus.DRAFT,
                 userId,
                 userId
@@ -82,7 +93,7 @@ public class DocumentsFacade {
                 membership.getTenantId(),
                 saved.getDocumentId(),
                 workspaceId,
-                title,
+                normalizedTitle,
                 userId
         ));
 
@@ -139,12 +150,20 @@ public class DocumentsFacade {
     }
 
     @Transactional
-    public DocumentView updateDocument(String documentId, String userId, String title, String content) {
+    public DocumentView updateDocument(String documentId, String userId, String title, String content, String status) {
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
         var membership = requireActiveMembership(document.getWorkspaceId(), userId);
         authorizationService.requireOwnerOrAdminOrResourceOwner(membership, document.getCreatedByUserId());
-        document.update(title, content, userId);
+        String normalizedTitle = requireText("Document title", title, MAX_TITLE_LENGTH);
+        String normalizedContent = requireText("Document content", content, MAX_CONTENT_LENGTH);
+        DocumentStatus nextStatus = parseStatus(status, document.getStatus());
+        boolean workspaceManager = isWorkspaceManager(membership);
+
+        requireDocumentTransition(document, nextStatus, workspaceManager);
+        requireDocumentEditRules(document, normalizedTitle, normalizedContent, nextStatus, workspaceManager);
+
+        document.update(normalizedTitle, normalizedContent, nextStatus, userId);
         auditLogger.logWrite("documents", "update", "document", document.getDocumentId(), "SUCCESS");
 
         // Update index in OpenSearch
@@ -155,7 +174,7 @@ public class DocumentsFacade {
                 membership.getTenantId(),
                 document.getDocumentId(),
                 document.getWorkspaceId(),
-                title,
+                normalizedTitle,
                 userId
         ));
 
@@ -167,11 +186,15 @@ public class DocumentsFacade {
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
         requireActiveMembership(document.getWorkspaceId(), userId);
+        if (document.getStatus() == DocumentStatus.ARCHIVED) {
+            throw new IllegalStateException("Archived documents are locked for comments");
+        }
+        String normalizedBody = requireText("Document comment", body, 4000);
         DocumentCommentEntity saved = documentCommentRepository.save(new DocumentCommentEntity(
                 "comment-" + UUID.randomUUID(),
                 documentId,
                 userId,
-                body
+                normalizedBody
         ));
         auditLogger.logWrite("documents", "comment", "document", documentId, "SUCCESS");
         return new DocumentCommentView(saved.getCommentId(), saved.getDocumentId(), saved.getAuthorUserId(), saved.getBody());
@@ -206,12 +229,13 @@ public class DocumentsFacade {
     private String slugify(String value) {
         String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
-        return normalized.toLowerCase(Locale.ROOT)
+        String slug = normalized.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("(^-|-$)", "");
+        return slug.isBlank() ? "item" : slug;
     }
 
-    private com.example.platform.identityaccess.domain.MembershipEntity requireActiveMembership(String workspaceId, String userId) {
+    private MembershipEntity requireActiveMembership(String workspaceId, String userId) {
         var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
         if (membership.getStatus() != MembershipStatus.ACTIVE) {
@@ -238,5 +262,81 @@ public class DocumentsFacade {
         } catch (Exception e) {
             auditLogger.logWrite("documents", "search_index", "document", document.getDocumentId(), "FAILED: " + e.getMessage());
         }
+    }
+
+    private DocumentStatus parseStatus(String status, DocumentStatus fallback) {
+        if (status == null || status.isBlank()) {
+            return fallback;
+        }
+        String normalized = status.trim();
+        try {
+            return DocumentStatus.valueOf(normalized);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Unsupported document status: " + normalized);
+        }
+    }
+
+    private void requireDocumentTransition(DocumentEntity document, DocumentStatus nextStatus, boolean workspaceManager) {
+        DocumentStatus currentStatus = document.getStatus();
+        if (currentStatus == nextStatus) {
+            return;
+        }
+        if ((nextStatus == DocumentStatus.ACTIVE || nextStatus == DocumentStatus.ARCHIVED) && !workspaceManager) {
+            throw new AuthorizationDeniedException("Only workspace managers can publish or archive documents");
+        }
+        if (currentStatus == DocumentStatus.ARCHIVED && !workspaceManager) {
+            throw new AuthorizationDeniedException("Only workspace managers can restore archived documents");
+        }
+
+        EnumSet<DocumentStatus> allowed = switch (currentStatus) {
+            case DRAFT -> EnumSet.of(DocumentStatus.IN_REVIEW, DocumentStatus.ACTIVE, DocumentStatus.ARCHIVED);
+            case IN_REVIEW -> EnumSet.of(DocumentStatus.DRAFT, DocumentStatus.ACTIVE, DocumentStatus.ARCHIVED);
+            case ACTIVE -> EnumSet.of(DocumentStatus.DRAFT, DocumentStatus.ARCHIVED);
+            case ARCHIVED -> EnumSet.of(DocumentStatus.DRAFT);
+        };
+
+        if (!allowed.contains(nextStatus)) {
+            throw new IllegalStateException("Document status cannot move from " + currentStatus + " to " + nextStatus);
+        }
+    }
+
+    private void requireDocumentEditRules(
+            DocumentEntity document,
+            String nextTitle,
+            String nextContent,
+            DocumentStatus nextStatus,
+            boolean workspaceManager
+    ) {
+        boolean contentChanged = !Objects.equals(document.getTitle(), nextTitle)
+                || !Objects.equals(document.getContent(), nextContent);
+        if (document.getStatus() == DocumentStatus.ARCHIVED && contentChanged) {
+            throw new IllegalStateException("Archived documents must be restored to DRAFT before editing content");
+        }
+        if (document.getStatus() == DocumentStatus.ACTIVE && contentChanged && nextStatus == DocumentStatus.ACTIVE) {
+            throw new IllegalStateException("Active documents must move back to DRAFT before content changes");
+        }
+        if ((nextStatus == DocumentStatus.IN_REVIEW || nextStatus == DocumentStatus.ACTIVE)
+                && nextContent.length() < MIN_REVIEW_CONTENT_LENGTH) {
+            throw new IllegalStateException("Documents submitted for review or publishing require at least "
+                    + MIN_REVIEW_CONTENT_LENGTH + " characters");
+        }
+        if (nextStatus == DocumentStatus.ACTIVE && !workspaceManager) {
+            throw new AuthorizationDeniedException("Only workspace managers can publish documents");
+        }
+    }
+
+    private String requireText(String fieldName, String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " is required");
+        }
+        String normalized = value.trim();
+        if (normalized.length() > maxLength) {
+            throw new IllegalArgumentException(fieldName + " must be at most " + maxLength + " characters");
+        }
+        return normalized;
+    }
+
+    private boolean isWorkspaceManager(MembershipEntity membership) {
+        return membership.getRole() == MembershipRole.OWNER || membership.getRole() == MembershipRole.ADMIN;
     }
 }

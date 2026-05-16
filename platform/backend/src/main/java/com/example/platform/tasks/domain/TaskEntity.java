@@ -73,6 +73,10 @@ public class TaskEntity extends AbstractAuditableEntity {
         return taskId;
     }
 
+    public String getTenantId() {
+        return tenantId;
+    }
+
     public String getWorkspaceId() {
         return workspaceId;
     }
