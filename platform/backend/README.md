@@ -131,6 +131,37 @@ POST /api/v2/workspaces/{workspaceId}/authorization/decisions
 
 `/api/v2` is ABAC/OPA-style: decisions also consider request/resource attributes such as `resourceOwnerUserId`, `assigneeUserId`, `resourceTenantId`, status, and `riskLevel`. It is implemented as a local OPA-compatible policy shape for comparison, not as an external OPA sidecar yet.
 
+## Authorization Policy Engine Comparison
+
+Application authorization now goes through one selected policy engine. The default preserves the existing in-code guard behavior:
+
+```text
+PLATFORM_FEATURE_AUTHORIZATION_ENGINE=in-code
+PLATFORM_FEATURE_AUTHORIZATION_ENGINE=opa-local
+PLATFORM_FEATURE_AUTHORIZATION_ENGINE=casbin-local
+PLATFORM_FEATURE_AUTHORIZATION_ENGINE=db-policy
+```
+
+The versioned endpoints above still compare policy models (`RBAC` vs `ABAC/OPA-style`). The policy-engine comparison instead asks where/how the same decision shape is evaluated:
+
+- `in-code`: current application guard rules implemented in Java
+- `opa-local`: local OPA-compatible evaluator backed by the existing ABAC implementation
+- `casbin-local`: local Casbin-style RBAC/ABAC evaluator without an external dependency
+- `db-policy`: seeded database policy rules evaluated by priority with default deny
+
+Stable selected-engine endpoint:
+
+```text
+POST /api/workspaces/{workspaceId}/authorization/decisions
+```
+
+Direct comparison endpoints:
+
+```text
+GET  /api/benchmarks/authorization/engine
+POST /api/benchmarks/authorization/{engine}/decisions
+```
+
 ## Cache Strategy Comparison
 
 Runtime cache access goes through one shared cache facade. Select the implementation with:

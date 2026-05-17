@@ -144,6 +144,8 @@ platform:
         timeout-ms: ${PLATFORM_FEATURE_CACHE_MEMCACHED_TIMEOUT_MS:1000}
     rate-limit:
       mode: ${PLATFORM_FEATURE_RATE_LIMIT_MODE:fixed-window}
+    authorization:
+      engine: ${PLATFORM_FEATURE_AUTHORIZATION_ENGINE:in-code}
   event-publishing:
     mode: outbox
     kafka:

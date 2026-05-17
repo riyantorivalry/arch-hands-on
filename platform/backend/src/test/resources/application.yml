@@ -20,6 +20,8 @@ platform:
       mode: caffeine
     rate-limit:
       mode: fixed-window
+    authorization:
+      engine: in-code
   event-publishing:
     mode: in-process  # Options: in-process, kafka, outbox
     kafka:

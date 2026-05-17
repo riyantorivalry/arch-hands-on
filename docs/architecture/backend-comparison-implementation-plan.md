@@ -688,6 +688,31 @@ Implementation:
 - externalize policy decisions
 - keep business facts in application services
 
+For the in-process comparison track, keep the public application authorization call stable and select the engine by configuration:
+
+```text
+PLATFORM_FEATURE_AUTHORIZATION_ENGINE=in-code
+PLATFORM_FEATURE_AUTHORIZATION_ENGINE=opa-local
+PLATFORM_FEATURE_AUTHORIZATION_ENGINE=casbin-local
+PLATFORM_FEATURE_AUTHORIZATION_ENGINE=db-policy
+```
+
+Use the versioned endpoints for policy-model comparison:
+
+```text
+POST /api/v1/workspaces/{workspaceId}/authorization/decisions
+POST /api/v2/workspaces/{workspaceId}/authorization/decisions
+```
+
+Use benchmark endpoints for policy-engine comparison:
+
+```text
+GET  /api/benchmarks/authorization/engine
+POST /api/benchmarks/authorization/{engine}/decisions
+```
+
+`db-policy` starts as a read-only seeded-policy engine using `authorization_policy_rules`. Runtime policy editing should be added only after the seeded rule behavior is benchmarked and audited.
+
 Comparison metrics:
 
 - policy readability

@@ -1,26 +1,43 @@
 package com.example.platform.identityaccess.application;
 
 import com.example.platform.common.web.AuthorizationDeniedException;
+import com.example.platform.identityaccess.application.authorization.AuthorizationDecision;
+import com.example.platform.identityaccess.application.authorization.AuthorizationDecisionRequest;
+import com.example.platform.identityaccess.application.authorization.AuthorizationPolicyEngineService;
 import com.example.platform.identityaccess.domain.MembershipEntity;
-import com.example.platform.identityaccess.domain.MembershipRole;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AuthorizationService {
 
+    private final AuthorizationPolicyEngineService policyEngineService;
+
+    public AuthorizationService(AuthorizationPolicyEngineService policyEngineService) {
+        this.policyEngineService = policyEngineService;
+    }
+
     public void requireWorkspaceManager(MembershipEntity membership) {
-        if (membership.getRole() != MembershipRole.OWNER && membership.getRole() != MembershipRole.ADMIN) {
-            throw new AuthorizationDeniedException("Workspace manager role is required");
-        }
+        requireAllowed(membership, new AuthorizationDecisionRequest(
+                "workspace:manage",
+                "workspace",
+                membership.getWorkspaceId(),
+                membership.getTenantId(),
+                null,
+                null,
+                null
+        ), "Workspace manager role is required");
     }
 
     public void requireOwnerOrAdminOrResourceOwner(MembershipEntity membership, String resourceOwnerUserId) {
-        if (membership.getRole() == MembershipRole.OWNER || membership.getRole() == MembershipRole.ADMIN) {
-            return;
-        }
-        if (!membership.getUserId().equals(resourceOwnerUserId)) {
-            throw new AuthorizationDeniedException("Actor is not allowed to modify this resource");
-        }
+        requireAllowed(membership, new AuthorizationDecisionRequest(
+                "document:update",
+                "document",
+                null,
+                membership.getTenantId(),
+                resourceOwnerUserId,
+                null,
+                null
+        ), "Actor is not allowed to modify this resource");
     }
 
     public void requireOwnerOrAdminOrAssignee(
@@ -28,15 +45,21 @@ public class AuthorizationService {
             String resourceOwnerUserId,
             String assigneeUserId
     ) {
-        if (membership.getRole() == MembershipRole.OWNER || membership.getRole() == MembershipRole.ADMIN) {
-            return;
+        requireAllowed(membership, new AuthorizationDecisionRequest(
+                "task:update",
+                "task",
+                null,
+                membership.getTenantId(),
+                resourceOwnerUserId,
+                assigneeUserId,
+                null
+        ), "Actor is not allowed to modify this task");
+    }
+
+    private void requireAllowed(MembershipEntity membership, AuthorizationDecisionRequest request, String denialMessage) {
+        AuthorizationDecision decision = policyEngineService.decide(membership, request);
+        if (!decision.allowed()) {
+            throw new AuthorizationDeniedException(denialMessage);
         }
-        if (membership.getUserId().equals(resourceOwnerUserId)) {
-            return;
-        }
-        if (assigneeUserId != null && membership.getUserId().equals(assigneeUserId)) {
-            return;
-        }
-        throw new AuthorizationDeniedException("Actor is not allowed to modify this task");
     }
 }

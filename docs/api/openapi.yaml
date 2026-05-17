@@ -256,6 +256,92 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/workspaces/{workspaceId}/authorization/decisions:
+    post:
+      tags:
+        - Identity Access
+      summary: Evaluate an authorization decision using the selected policy engine.
+      description: Stable authorization endpoint backed by `platform.feature.authorization.engine`.
+      operationId: decideAuthorizationSelectedEngine
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorizationDecisionRequest"
+      responses:
+        "200":
+          description: Selected policy engine authorization decision.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationDecision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/benchmarks/authorization/engine:
+    get:
+      tags:
+        - Identity Access
+      summary: Get the selected authorization policy engine.
+      description: Reports the `platform.feature.authorization.engine` value used by application authorization guards.
+      operationId: getSelectedAuthorizationPolicyEngine
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Selected authorization policy engine.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationEngineResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/benchmarks/authorization/{engine}/decisions:
+    post:
+      tags:
+        - Identity Access
+      summary: Evaluate an authorization decision using a specific policy engine.
+      description: Benchmark endpoint for in-code, local OPA-compatible, and local Casbin-style policy engine comparison.
+      operationId: decideAuthorizationBenchmarkEngine
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/AuthorizationEngine"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorizationDecisionRequest"
+      responses:
+        "200":
+          description: Direct policy engine authorization decision.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationDecision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/v1/workspaces/{workspaceId}/events:
     get:
       tags:
@@ -1210,6 +1296,18 @@ components:
         type: string
         format: date-time
       description: Inclusive analytics window end. Defaults to the current server time.
+    AuthorizationEngine:
+      name: engine
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+          - in-code
+          - opa-local
+          - casbin-local
+          - db-policy
+      description: Authorization policy engine to invoke directly for benchmark comparison.
     CacheStrategy:
       name: strategy
       in: path
@@ -1864,6 +1962,10 @@ components:
           enum:
             - rbac
             - abac-opa
+            - in-code
+            - opa-local
+            - casbin-local
+            - db-policy
         policyId:
           type: string
         allowed:
@@ -1895,6 +1997,19 @@ components:
         evaluatedAt:
           type: string
           format: date-time
+
+    AuthorizationEngineResponse:
+      type: object
+      required:
+        - selectedEngine
+      properties:
+        selectedEngine:
+          type: string
+          enum:
+            - in-code
+            - opa-local
+            - casbin-local
+            - db-policy
 
     CacheStrategyResponse:
       type: object
