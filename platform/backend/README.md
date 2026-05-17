@@ -161,6 +161,35 @@ DELETE /api/benchmarks/cache/{strategy}/entries/{key}
 
 Allowed `{strategy}` values are `caffeine`, `redis`, and `memcached`. Normal application code should keep using the shared cache facade so rate limiting and future cache-backed flows can be switched by configuration.
 
+## Rate Limiting Algorithm Comparison
+
+Rate limiting goes through one shared service. Select the default runtime algorithm with:
+
+```text
+PLATFORM_FEATURE_RATE_LIMIT_MODE=fixed-window
+PLATFORM_FEATURE_RATE_LIMIT_MODE=sliding-window
+PLATFORM_FEATURE_RATE_LIMIT_MODE=token-bucket
+```
+
+`fixed-window` is the local/test default and uses a bucketed counter in the configured cache backend. `sliding-window` stores recent request timestamps for stricter rolling-window behavior. `token-bucket` refills permits over time and allows short bursts up to the configured limit.
+
+Direct comparison endpoints are available for authenticated benchmark calls:
+
+```text
+GET  /api/benchmarks/rate-limit/algorithm
+POST /api/benchmarks/rate-limit/{algorithm}/decisions
+```
+
+Allowed `{algorithm}` values are `fixed-window`, `sliding-window`, and `token-bucket`. The request shape is the same for each algorithm:
+
+```json
+{
+  "key": "user:123:global",
+  "limit": 100,
+  "windowSeconds": 60
+}
+```
+
 ## Observability
 
 Complete observability infrastructure is included:

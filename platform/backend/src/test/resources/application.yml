@@ -18,6 +18,8 @@ platform:
   feature:
     cache:
       mode: caffeine
+    rate-limit:
+      mode: fixed-window
   event-publishing:
     mode: in-process  # Options: in-process, kafka, outbox
     kafka:

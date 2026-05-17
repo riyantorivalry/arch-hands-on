@@ -832,6 +832,90 @@ Comparison metrics:
 - external dependency failure behavior
 - operational overhead
 
+## 6.8 Rate Limiting Algorithm
+
+Rate limiting should primarily use **feature toggles**, because product APIs should not change when the throttling algorithm changes.
+
+Reference configuration:
+
+```yaml
+platform:
+  feature:
+    rate-limit:
+      mode: fixed-window
+```
+
+### Mode: Fixed Window
+
+Implementation:
+
+- bucket requests by wall-clock window
+- use one cache counter per key/window
+- reject requests after the count exceeds the configured limit
+
+Good for:
+
+- simplest implementation
+- low storage overhead
+- distributed deployments when backed by Redis
+
+Weakness:
+
+- boundary bursts can exceed the intended rolling rate
+- request distribution inside the window is not tracked
+
+### Mode: Sliding Window
+
+Implementation:
+
+- store recent request timestamps per key
+- remove timestamps outside the active window
+- reject when the timestamp count reaches the configured limit
+
+Good for:
+
+- stricter rolling-window fairness
+- easier reasoning for per-user API limits
+
+Weakness:
+
+- more memory per key
+- needs atomic storage operations for production-grade distributed enforcement
+
+### Mode: Token Bucket
+
+Implementation:
+
+- store token count and last refill timestamp per key
+- refill tokens continuously based on `limit / windowSeconds`
+- allow bursts up to the bucket capacity
+
+Good for:
+
+- burst-friendly API traffic
+- smoother long-term throughput control
+
+Weakness:
+
+- less intuitive reset semantics
+- needs careful clock and atomic update handling across nodes
+
+Benchmark endpoints:
+
+```text
+GET  /api/benchmarks/rate-limit/algorithm
+POST /api/benchmarks/rate-limit/{algorithm}/decisions
+```
+
+Comparison metrics:
+
+- allowed/rejected decision latency
+- burst behavior
+- boundary behavior
+- storage writes per decision
+- memory usage per key
+- distributed consistency when backed by Redis
+
 ## 7. Implementation Sequence
 
 ### Step 1: Stabilize Baseline

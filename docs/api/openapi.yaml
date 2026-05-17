@@ -15,6 +15,7 @@ tags:
   - name: Analytics
   - name: Realtime
   - name: Cache
+  - name: Rate Limiting
   - name: Platform
   - name: GraphQL
 security:
@@ -445,6 +446,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CacheCounterResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/benchmarks/rate-limit/algorithm:
+    get:
+      tags:
+        - Rate Limiting
+      summary: Get the rate limiting algorithm selected for stable runtime usage.
+      description: Reports the `platform.feature.rate-limit.mode` value used by the shared rate limit service.
+      operationId: getSelectedRateLimitAlgorithm
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Selected rate limiting algorithm.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitAlgorithmResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/benchmarks/rate-limit/{algorithm}/decisions:
+    post:
+      tags:
+        - Rate Limiting
+      summary: Evaluate a rate limit decision using a specific algorithm.
+      description: Benchmark endpoint for fixed-window, sliding-window, and token-bucket comparison behind the same request shape.
+      operationId: evaluateRateLimitDecisionForAlgorithm
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/RateLimitAlgorithm"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RateLimitDecisionRequest"
+      responses:
+        "200":
+          description: Rate limit decision.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitDecision"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1174,6 +1228,17 @@ components:
       schema:
         type: string
       description: Cache key. Memcached requires keys to be 250 characters or fewer with no whitespace.
+    RateLimitAlgorithm:
+      name: algorithm
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+          - fixed-window
+          - sliding-window
+          - token-bucket
+      description: Rate limiting algorithm to invoke directly for benchmark comparison.
 
   headers:
     CorrelationId:
@@ -1924,6 +1989,79 @@ components:
           type: integer
           format: int64
           description: Remaining TTL in seconds, or -1 when the backend does not expose TTL.
+        observedAt:
+          type: string
+          format: date-time
+
+    RateLimitAlgorithmResponse:
+      type: object
+      required:
+        - selectedAlgorithm
+      properties:
+        selectedAlgorithm:
+          type: string
+          enum:
+            - fixed-window
+            - sliding-window
+            - token-bucket
+
+    RateLimitDecisionRequest:
+      type: object
+      required:
+        - key
+        - limit
+        - windowSeconds
+      properties:
+        key:
+          type: string
+          minLength: 1
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          example: 100
+        windowSeconds:
+          type: integer
+          format: int32
+          minimum: 1
+          example: 60
+
+    RateLimitDecision:
+      type: object
+      required:
+        - algorithm
+        - key
+        - allowed
+        - limit
+        - remaining
+        - retryAfterSeconds
+        - resetSeconds
+        - observedAt
+      properties:
+        algorithm:
+          type: string
+          enum:
+            - fixed-window
+            - sliding-window
+            - token-bucket
+        key:
+          type: string
+        allowed:
+          type: boolean
+        limit:
+          type: integer
+          format: int32
+        remaining:
+          type: integer
+          format: int64
+        retryAfterSeconds:
+          type: integer
+          format: int64
+          description: Seconds until the caller should retry when rejected, or 0 when allowed.
+        resetSeconds:
+          type: integer
+          format: int64
+          description: Algorithm-specific reset estimate in seconds.
         observedAt:
           type: string
           format: date-time

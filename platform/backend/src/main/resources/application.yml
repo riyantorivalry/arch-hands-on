@@ -142,6 +142,8 @@ platform:
         host: ${PLATFORM_FEATURE_CACHE_MEMCACHED_HOST:localhost}
         port: ${PLATFORM_FEATURE_CACHE_MEMCACHED_PORT:11211}
         timeout-ms: ${PLATFORM_FEATURE_CACHE_MEMCACHED_TIMEOUT_MS:1000}
+    rate-limit:
+      mode: ${PLATFORM_FEATURE_RATE_LIMIT_MODE:fixed-window}
   event-publishing:
     mode: outbox
     kafka:
