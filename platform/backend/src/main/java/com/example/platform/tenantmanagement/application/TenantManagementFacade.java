@@ -1,6 +1,7 @@
 package com.example.platform.tenantmanagement.application;
 
 import com.example.platform.common.domain.DomainEventPublisher;
+import com.example.platform.common.infrastructure.database.TenantSchemaProvisioner;
 import com.example.platform.common.web.AuthorizationDeniedException;
 import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.identityaccess.domain.MembershipEntity;
@@ -34,6 +35,7 @@ public class TenantManagementFacade {
     private final DomainEventPublisher domainEventPublisher;
     private final WorkspaceSettingsRepository workspaceSettingsRepository;
     private final AuthorizationService authorizationService;
+    private final TenantSchemaProvisioner tenantSchemaProvisioner;
 
     public TenantManagementFacade(
             TenantRepository tenantRepository,
@@ -42,7 +44,8 @@ public class TenantManagementFacade {
             MembershipRepository membershipRepository,
             DomainEventPublisher domainEventPublisher,
             WorkspaceSettingsRepository workspaceSettingsRepository,
-            AuthorizationService authorizationService
+            AuthorizationService authorizationService,
+            TenantSchemaProvisioner tenantSchemaProvisioner
     ) {
         this.tenantRepository = tenantRepository;
         this.workspaceRepository = workspaceRepository;
@@ -51,6 +54,7 @@ public class TenantManagementFacade {
         this.domainEventPublisher = domainEventPublisher;
         this.workspaceSettingsRepository = workspaceSettingsRepository;
         this.authorizationService = authorizationService;
+        this.tenantSchemaProvisioner = tenantSchemaProvisioner;
     }
 
     @Transactional
@@ -72,6 +76,9 @@ public class TenantManagementFacade {
                 .orElseGet(() -> membershipRepository.save(
                         new MembershipEntity(tenantId, workspaceId, user.getUserId(), MembershipRole.OWNER, MembershipStatus.ACTIVE)
                 ));
+
+        flushBootstrapRows();
+        tenantSchemaProvisioner.provisionTenant(tenantId, workspaceId, user.getUserId());
 
         // Publish domain event
         domainEventPublisher.publish(new TenantCreatedEvent(tenantId, tenantName, workspaceId, workspaceName));
@@ -169,6 +176,14 @@ public class TenantManagementFacade {
 
     private WorkspaceSettingsEntity defaultSettings(String workspaceId, String tenantId) {
         return new WorkspaceSettingsEntity(workspaceId, tenantId, "DRAFT", true, 365);
+    }
+
+    private void flushBootstrapRows() {
+        tenantRepository.flush();
+        workspaceRepository.flush();
+        userRepository.flush();
+        membershipRepository.flush();
+        workspaceSettingsRepository.flush();
     }
 
     private WorkspaceView toWorkspaceView(WorkspaceEntity workspace) {

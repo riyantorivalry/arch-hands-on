@@ -133,6 +133,11 @@ server:
   shutdown: graceful
 
 platform:
+  tenancy:
+    mode: ${PLATFORM_TENANCY_MODE:shared-schema}
+    tenant-schema:
+      default-schema: ${PLATFORM_TENANCY_DEFAULT_SCHEMA:public}
+      prefix: ${PLATFORM_TENANCY_SCHEMA_PREFIX:tenant_}
   feature:
     cache:
       mode: ${PLATFORM_FEATURE_CACHE_MODE:caffeine}

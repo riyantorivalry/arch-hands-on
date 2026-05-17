@@ -224,6 +224,45 @@ experiment/tenant-schema-isolation
 experiment/clickhouse-analytics
 ```
 
+### Tenant Schema Isolation Branch
+
+Use branch:
+
+```text
+experiment/tenant-schema-isolation
+```
+
+Baseline:
+
+- `shared-schema`
+- one set of application tables
+- `tenant_id` columns on tenant-owned data
+- tenant membership checks enforced in application services
+
+Experiment:
+
+- `tenant-schema`
+- one provisioned database schema per tenant
+- deterministic schema naming from tenant ID
+- connection schema routing from authenticated request context
+- tenant bootstrap migrates the tenant schema and copies bootstrap metadata
+
+Configuration:
+
+```text
+PLATFORM_TENANCY_MODE=shared-schema
+PLATFORM_TENANCY_MODE=tenant-schema
+```
+
+Comparison metrics:
+
+- tenant bootstrap latency
+- migration/provisioning time per tenant
+- query latency with schema routing
+- operational overhead for migrations
+- blast radius of tenant data mistakes
+- backup/restore complexity
+
 Branches must include benchmark notes before they are merged or abandoned.
 
 ## 5. Versioning Model

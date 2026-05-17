@@ -16,6 +16,7 @@ tags:
   - name: Realtime
   - name: Cache
   - name: Rate Limiting
+  - name: Tenancy
   - name: Platform
   - name: GraphQL
 security:
@@ -501,6 +502,51 @@ paths:
                 $ref: "#/components/schemas/RateLimitDecision"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/benchmarks/tenancy/model:
+    get:
+      tags:
+        - Tenancy
+      summary: Get the active tenancy database model.
+      description: Reports whether the backend is using the shared-schema baseline or the tenant-per-schema experiment.
+      operationId: getTenancyModel
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Active tenancy model.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenancyModelResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/benchmarks/tenancy/tenants/{tenantId}/schema:
+    get:
+      tags:
+        - Tenancy
+      summary: Resolve the tenant schema name for a tenant.
+      description: Shows the deterministic schema name used by the tenant-per-schema branch.
+      operationId: getTenantSchemaName
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: Tenant schema mapping.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSchemaResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -2065,6 +2111,39 @@ components:
         observedAt:
           type: string
           format: date-time
+
+    TenancyModelResponse:
+      type: object
+      required:
+        - mode
+        - defaultSchema
+        - tenantSchemaRoutingEnabled
+      properties:
+        mode:
+          type: string
+          enum:
+            - shared-schema
+            - tenant-schema
+        defaultSchema:
+          type: string
+          example: public
+        tenantSchemaRoutingEnabled:
+          type: boolean
+
+    TenantSchemaResponse:
+      type: object
+      required:
+        - tenantId
+        - schemaName
+        - provisionedWhenTenantCreated
+      properties:
+        tenantId:
+          type: string
+        schemaName:
+          type: string
+          example: tenant_tenant_acme_corp
+        provisionedWhenTenantCreated:
+          type: boolean
 
     PlatformInfoResponse:
       type: object

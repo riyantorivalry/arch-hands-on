@@ -190,6 +190,33 @@ Allowed `{algorithm}` values are `fixed-window`, `sliding-window`, and `token-bu
 }
 ```
 
+## Tenancy Model Comparison
+
+The `experiment/tenant-schema-isolation` branch keeps the main branch behavior as the baseline:
+
+```text
+PLATFORM_TENANCY_MODE=shared-schema
+```
+
+`shared-schema` uses one database schema and keeps tenant isolation through `tenant_id` columns and explicit tenant checks.
+
+The branch adds an opt-in tenant-per-schema mode:
+
+```text
+PLATFORM_TENANCY_MODE=tenant-schema
+PLATFORM_TENANCY_DEFAULT_SCHEMA=public
+PLATFORM_TENANCY_SCHEMA_PREFIX=tenant_
+```
+
+In `tenant-schema` mode, tenant bootstrap provisions a schema for the tenant, migrates it with Flyway, copies the bootstrap tenant/workspace/user/membership rows, and routes authenticated tenant-context database connections to that schema.
+
+Authenticated comparison endpoints:
+
+```text
+GET /api/benchmarks/tenancy/model
+GET /api/benchmarks/tenancy/tenants/{tenantId}/schema
+```
+
 ## Observability
 
 Complete observability infrastructure is included:

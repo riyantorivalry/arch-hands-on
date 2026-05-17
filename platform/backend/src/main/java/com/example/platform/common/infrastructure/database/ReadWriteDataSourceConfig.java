@@ -18,9 +18,11 @@ import org.springframework.util.StringUtils;
 public class ReadWriteDataSourceConfig {
 
     private final Environment environment;
+    private final TenantSchemaNameResolver tenantSchemaNameResolver;
 
-    public ReadWriteDataSourceConfig(Environment environment) {
+    public ReadWriteDataSourceConfig(Environment environment, TenantSchemaNameResolver tenantSchemaNameResolver) {
         this.environment = environment;
+        this.tenantSchemaNameResolver = tenantSchemaNameResolver;
     }
 
     @Bean
@@ -45,7 +47,19 @@ public class ReadWriteDataSourceConfig {
         routingDataSource.setTargetDataSources(targets);
         routingDataSource.setDefaultTargetDataSource(writeDataSource);
         routingDataSource.afterPropertiesSet();
+
+        if (isTenantSchemaMode()) {
+            return new TenantSchemaRoutingDataSource(
+                    routingDataSource,
+                    tenantSchemaNameResolver,
+                    environment.getProperty("platform.tenancy.tenant-schema.default-schema", "public")
+            );
+        }
         return routingDataSource;
+    }
+
+    private boolean isTenantSchemaMode() {
+        return "tenant-schema".equalsIgnoreCase(environment.getProperty("platform.tenancy.mode", "shared-schema"));
     }
 
     private DataSourceProperties bindOrDefault(String prefix) {
