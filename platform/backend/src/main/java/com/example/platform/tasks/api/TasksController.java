@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -41,13 +42,17 @@ public class TasksController {
     }
 
     @GetMapping("/workspaces/{workspaceId}/tasks")
-    public List<TasksFacade.TaskView> listTasks(@PathVariable String workspaceId) {
-        return facade.listTasks(workspaceId);
+    public List<TasksFacade.TaskView> listTasks(
+            @PathVariable String workspaceId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return facade.listTasks(workspaceId, RequestContexts.current().userId(), page, size);
     }
 
     @GetMapping("/tasks/{taskId}")
     public TasksFacade.TaskView getTask(@PathVariable String taskId) {
-        return facade.getTask(taskId);
+        return facade.getTask(taskId, RequestContexts.current().userId());
     }
 
     @PatchMapping("/tasks/{taskId}")

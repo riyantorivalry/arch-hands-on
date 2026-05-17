@@ -36,21 +36,27 @@ public class DocumentsController {
     }
 
     @GetMapping("/workspaces/{workspaceId}/documents")
-    public List<DocumentsFacade.DocumentView> listDocuments(@PathVariable String workspaceId) {
-        return facade.listDocuments(workspaceId);
+    public List<DocumentsFacade.DocumentView> listDocuments(
+            @PathVariable String workspaceId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return facade.listDocuments(workspaceId, RequestContexts.current().userId(), page, size);
     }
 
     @GetMapping("/workspaces/{workspaceId}/documents/search")
     public List<DocumentsFacade.DocumentView> searchDocuments(
             @PathVariable String workspaceId,
-            @RequestParam String query
+            @RequestParam String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
     ) {
-        return facade.searchDocuments(workspaceId, query);
+        return facade.searchDocuments(workspaceId, RequestContexts.current().userId(), query, page, size);
     }
 
     @GetMapping("/documents/{documentId}")
     public DocumentsFacade.DocumentView getDocument(@PathVariable String documentId) {
-        return facade.getDocument(documentId);
+        return facade.getDocument(documentId, RequestContexts.current().userId());
     }
 
     @PatchMapping("/documents/{documentId}")

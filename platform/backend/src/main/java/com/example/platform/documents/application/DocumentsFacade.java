@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +36,8 @@ public class DocumentsFacade {
     private static final int MAX_TITLE_LENGTH = 200;
     private static final int MAX_CONTENT_LENGTH = 12000;
     private static final int MIN_REVIEW_CONTENT_LENGTH = 20;
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final DocumentRepository documentRepository;
     private final DocumentCommentRepository documentCommentRepository;
@@ -102,27 +106,43 @@ public class DocumentsFacade {
 
     @Transactional(readOnly = true)
     public List<DocumentView> listDocuments(String workspaceId) {
-        return documentRepository.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId).stream()
+        return listDocuments(workspaceId, null, 0, DEFAULT_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DocumentView> listDocuments(String workspaceId, String userId, int page, int size) {
+        if (userId != null) {
+            requireActiveMembership(workspaceId, userId);
+        }
+        return documentRepository.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId, pageRequest(page, size)).stream()
                 .map(this::toDocumentView)
                 .toList();
     }
 
     public List<DocumentView> searchDocuments(String workspaceId, String query) {
+        return searchDocuments(workspaceId, null, query, 0, DEFAULT_PAGE_SIZE);
+    }
+
+    public List<DocumentView> searchDocuments(String workspaceId, String userId, String query, int page, int size) {
+        if (userId != null) {
+            requireActiveMembership(workspaceId, userId);
+        }
+        Pageable pageable = pageRequest(page, size);
         List<DocumentView> results;
         try {
-            results = transactionTemplate.execute(status -> searchDocumentsWithOpenSearch(workspaceId, query));
+            results = transactionTemplate.execute(status -> searchDocumentsWithOpenSearch(workspaceId, query, pageable));
         } catch (RuntimeException exception) {
             auditLogger.logWrite("documents", "search", "workspace", workspaceId, "OPENSEARCH_FALLBACK: " + exception.getMessage());
-            results = transactionTemplate.execute(status -> searchDocumentsWithPostgres(workspaceId, query));
+            results = transactionTemplate.execute(status -> searchDocumentsWithPostgres(workspaceId, query, pageable));
         }
 
         analyticsService.trackSearch(query, results.size());
         return results;
     }
 
-    private List<DocumentView> searchDocumentsWithOpenSearch(String workspaceId, String query) {
+    private List<DocumentView> searchDocumentsWithOpenSearch(String workspaceId, String query, Pageable pageable) {
         return documentSearchRepository
-                .findByWorkspaceIdAndTitleContainsOrContentContains(workspaceId, query, query)
+                .findByWorkspaceIdAndTitleContainsOrContentContains(workspaceId, query, query, pageable)
                 .stream()
                 .map(doc -> new DocumentView(
                         doc.getDocumentId(),
@@ -136,17 +156,25 @@ public class DocumentsFacade {
                 .toList();
     }
 
-    private List<DocumentView> searchDocumentsWithPostgres(String workspaceId, String query) {
-        return documentRepository.searchByWorkspaceIdAndQuery(workspaceId, query).stream()
+    private List<DocumentView> searchDocumentsWithPostgres(String workspaceId, String query, Pageable pageable) {
+        return documentRepository.searchByWorkspaceIdAndQuery(workspaceId, query, pageable).stream()
                 .map(this::toDocumentView)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public DocumentView getDocument(String documentId) {
-        return documentRepository.findById(documentId)
-                .map(this::toDocumentView)
+        return getDocument(documentId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public DocumentView getDocument(String documentId, String userId) {
+        DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
+        if (userId != null) {
+            requireActiveMembership(document.getWorkspaceId(), userId);
+        }
+        return toDocumentView(document);
     }
 
     @Transactional
@@ -237,7 +265,7 @@ public class DocumentsFacade {
 
     private MembershipEntity requireActiveMembership(String workspaceId, String userId) {
         var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
+                .orElseThrow(() -> new AuthorizationDeniedException("User is not a member of workspace " + workspaceId));
         if (membership.getStatus() != MembershipStatus.ACTIVE) {
             throw new IllegalStateException("Membership is not active for user " + userId);
         }
@@ -338,5 +366,11 @@ public class DocumentsFacade {
 
     private boolean isWorkspaceManager(MembershipEntity membership) {
         return membership.getRole() == MembershipRole.OWNER || membership.getRole() == MembershipRole.ADMIN;
+    }
+
+    private Pageable pageRequest(int page, int size) {
+        int normalizedPage = Math.max(page, 0);
+        int normalizedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        return PageRequest.of(normalizedPage, normalizedSize);
     }
 }

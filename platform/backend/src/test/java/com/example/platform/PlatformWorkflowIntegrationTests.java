@@ -91,6 +91,50 @@ class PlatformWorkflowIntegrationTests {
                 .andExpect(jsonPath("$.tenantId").value("tenant-acme-corp"))
                 .andExpect(jsonPath("$.role").value("OWNER"));
 
+        mockMvc.perform(post("/api/tenants/tenant-acme-corp/workspaces")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workspaceName": "Platform"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workspaceId").value("workspace-platform"))
+                .andExpect(jsonPath("$.tenantId").value("tenant-acme-corp"));
+
+        String platformLoginPayload = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userId": "user-alice",
+                                  "workspaceId": "workspace-platform"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workspaceId").value("workspace-platform"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String platformToken = JsonFieldExtractor.read(platformLoginPayload, "token");
+
+        mockMvc.perform(patch("/api/workspaces/workspace-platform/settings")
+                        .header("Authorization", "Bearer " + platformToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "defaultDocumentStatus": "IN_REVIEW",
+                                  "taskAutoAssignEnabled": false,
+                                  "messageRetentionDays": 90
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workspaceId").value("workspace-platform"))
+                .andExpect(jsonPath("$.defaultDocumentStatus").value("IN_REVIEW"))
+                .andExpect(jsonPath("$.taskAutoAssignEnabled").value(false))
+                .andExpect(jsonPath("$.messageRetentionDays").value(90));
+
         mockMvc.perform(post("/api/workspaces/workspace-engineering/channels")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -130,6 +174,11 @@ class PlatformWorkflowIntegrationTests {
                 .andExpect(jsonPath("$[0].channelId").value("channel-general"))
                 .andExpect(jsonPath("$[0].body").value("Hello team"));
 
+        mockMvc.perform(get("/api/channels/channel-general/messages?page=0&size=1")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].channelId").value("channel-general"));
+
         String documentId = mockMvc.perform(post("/api/workspaces/workspace-engineering/documents")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -165,6 +214,10 @@ class PlatformWorkflowIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].documentId").value(persistedDocumentId))
                 .andExpect(jsonPath("$[0].title").value("Architecture Notes"));
+
+        mockMvc.perform(get("/api/workspaces/workspace-platform/documents")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isForbidden());
 
         mockMvc.perform(patch("/api/documents/" + persistedDocumentId)
                         .header("Authorization", "Bearer " + memberToken)

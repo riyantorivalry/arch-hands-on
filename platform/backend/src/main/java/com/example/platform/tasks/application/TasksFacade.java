@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,8 @@ public class TasksFacade {
 
     private static final int MAX_TITLE_LENGTH = 200;
     private static final int MAX_DESCRIPTION_LENGTH = 4000;
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final TaskRepository taskRepository;
     private final TaskCommentRepository taskCommentRepository;
@@ -100,16 +104,32 @@ public class TasksFacade {
 
     @Transactional(readOnly = true)
     public List<TaskView> listTasks(String workspaceId) {
-        return taskRepository.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId).stream()
+        return listTasks(workspaceId, null, 0, DEFAULT_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TaskView> listTasks(String workspaceId, String userId, int page, int size) {
+        if (userId != null) {
+            requireActiveMembership(workspaceId, userId);
+        }
+        return taskRepository.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId, pageRequest(page, size)).stream()
                 .map(this::toTaskView)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public TaskView getTask(String taskId) {
-        return taskRepository.findById(taskId)
-                .map(this::toTaskView)
+        return getTask(taskId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public TaskView getTask(String taskId, String userId) {
+        TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        if (userId != null) {
+            requireActiveMembership(task.getWorkspaceId(), userId);
+        }
+        return toTaskView(task);
     }
 
     @Transactional
@@ -195,7 +215,7 @@ public class TasksFacade {
 
     private MembershipEntity requireActiveMembership(String workspaceId, String userId) {
         var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
+                .orElseThrow(() -> new AuthorizationDeniedException("User is not a member of workspace " + workspaceId));
         if (membership.getStatus() != MembershipStatus.ACTIVE) {
             throw new IllegalStateException("Membership is not active for user " + userId);
         }
@@ -315,5 +335,11 @@ public class TasksFacade {
 
     private boolean isWorkspaceManager(MembershipEntity membership) {
         return membership.getRole() == MembershipRole.OWNER || membership.getRole() == MembershipRole.ADMIN;
+    }
+
+    private Pageable pageRequest(int page, int size) {
+        int normalizedPage = Math.max(page, 0);
+        int normalizedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        return PageRequest.of(normalizedPage, normalizedSize);
     }
 }

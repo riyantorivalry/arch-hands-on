@@ -60,6 +60,14 @@ public class MessageEntity extends AbstractAuditableEntity {
         return messageId;
     }
 
+    public String getTenantId() {
+        return tenantId;
+    }
+
+    public String getWorkspaceId() {
+        return workspaceId;
+    }
+
     public String getChannelId() {
         return channelId;
     }

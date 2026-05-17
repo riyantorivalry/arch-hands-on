@@ -2,6 +2,7 @@ package com.example.platform.documents.infrastructure;
 
 import com.example.platform.documents.domain.DocumentEntity;
 import java.util.List;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -9,6 +10,8 @@ import org.springframework.data.repository.query.Param;
 public interface DocumentRepository extends JpaRepository<DocumentEntity, String> {
 
     List<DocumentEntity> findByWorkspaceIdOrderByUpdatedAtDesc(String workspaceId);
+
+    List<DocumentEntity> findByWorkspaceIdOrderByUpdatedAtDesc(String workspaceId, Pageable pageable);
 
     @Query("""
             select document
@@ -22,6 +25,7 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, String
             """)
     List<DocumentEntity> searchByWorkspaceIdAndQuery(
             @Param("workspaceId") String workspaceId,
-            @Param("query") String query
+            @Param("query") String query,
+            Pageable pageable
     );
 }

@@ -1,7 +1,6 @@
 package com.example.platform.common.infrastructure;
 
 import com.example.platform.common.domain.DomainEvent;
-import com.example.platform.common.domain.DomainEventPublisher;
 import com.example.platform.common.domain.OutboxEvent;
 import com.example.platform.common.domain.OutboxEventRepository;
 import com.example.platform.documents.domain.DocumentCreatedEvent;
@@ -12,11 +11,12 @@ import com.example.platform.tasks.domain.TaskAssignedEvent;
 import com.example.platform.tasks.domain.TaskCreatedEvent;
 import com.example.platform.tasks.domain.TaskStatusChangedEvent;
 import com.example.platform.tenantmanagement.domain.TenantCreatedEvent;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,8 +61,7 @@ public class OutboxEventProcessor {
     }
 
     private final OutboxEventRepository outboxRepository;
-    private final ObjectMapper objectMapper;
-    private final DomainEventPublisher externalPublisher;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     @Value("${platform.outbox.max-retries:3}")
     private int maxRetries;
@@ -75,12 +74,10 @@ public class OutboxEventProcessor {
 
     public OutboxEventProcessor(
             OutboxEventRepository outboxRepository,
-            ObjectMapper objectMapper,
-            DomainEventPublisher externalPublisher
+            ApplicationEventPublisher applicationEventPublisher
     ) {
         this.outboxRepository = outboxRepository;
-        this.objectMapper = objectMapper;
-        this.externalPublisher = externalPublisher;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     /**
@@ -106,8 +103,8 @@ public class OutboxEventProcessor {
                 // Deserialize event
                 DomainEvent domainEvent = deserializeEvent(outboxEvent);
 
-                // Publish to external system
-                externalPublisher.publish(domainEvent);
+                // Publish to local listeners without routing back through DomainEventPublisher.
+                applicationEventPublisher.publishEvent(domainEvent);
 
                 // Mark as published
                 outboxEvent.markAsPublished();
@@ -179,7 +176,7 @@ public class OutboxEventProcessor {
 
         try {
             // Deserialize JSON to the concrete event class
-            DomainEvent deserializedEvent = objectMapper.convertValue(outboxEvent.getEventData(), eventClass);
+            DomainEvent deserializedEvent = toDomainEvent(outboxEvent, eventClass);
 
             LOGGER.debug("Successfully deserialized outbox event {} as {}",
                         outboxEvent.getEventId(), eventType);
@@ -191,5 +188,93 @@ public class OutboxEventProcessor {
             LOGGER.error(errorMsg, e);
             throw new IllegalArgumentException(errorMsg, e);
         }
+    }
+
+    private DomainEvent toDomainEvent(
+            OutboxEvent outboxEvent,
+            Class<? extends DomainEvent> eventClass
+    ) {
+        JsonNode data = outboxEvent.getEventData();
+        String tenantId = outboxEvent.getTenantId();
+
+        if (eventClass == TenantCreatedEvent.class) {
+            return new TenantCreatedEvent(
+                    tenantId,
+                    requiredText(data, "tenantName"),
+                    requiredText(data, "workspaceId"),
+                    requiredText(data, "workspaceName")
+            );
+        }
+        if (eventClass == WorkspaceMemberAddedEvent.class) {
+            return new WorkspaceMemberAddedEvent(
+                    tenantId,
+                    requiredText(data, "workspaceId"),
+                    requiredText(data, "userId"),
+                    requiredText(data, "role")
+            );
+        }
+        if (eventClass == TaskCreatedEvent.class) {
+            return new TaskCreatedEvent(
+                    tenantId,
+                    outboxEvent.getAggregateId(),
+                    requiredText(data, "workspaceId"),
+                    requiredText(data, "title"),
+                    requiredText(data, "createdByUserId")
+            );
+        }
+        if (eventClass == TaskAssignedEvent.class) {
+            return new TaskAssignedEvent(
+                    tenantId,
+                    outboxEvent.getAggregateId(),
+                    requiredText(data, "workspaceId"),
+                    requiredText(data, "assigneeUserId")
+            );
+        }
+        if (eventClass == TaskStatusChangedEvent.class) {
+            return new TaskStatusChangedEvent(
+                    tenantId,
+                    outboxEvent.getAggregateId(),
+                    requiredText(data, "workspaceId"),
+                    requiredText(data, "previousStatus"),
+                    requiredText(data, "newStatus")
+            );
+        }
+        if (eventClass == DocumentCreatedEvent.class) {
+            return new DocumentCreatedEvent(
+                    tenantId,
+                    outboxEvent.getAggregateId(),
+                    requiredText(data, "workspaceId"),
+                    requiredText(data, "title"),
+                    requiredText(data, "createdByUserId")
+            );
+        }
+        if (eventClass == DocumentUpdatedEvent.class) {
+            return new DocumentUpdatedEvent(
+                    tenantId,
+                    outboxEvent.getAggregateId(),
+                    requiredText(data, "workspaceId"),
+                    requiredText(data, "title"),
+                    requiredText(data, "lastModifiedByUserId")
+            );
+        }
+        if (eventClass == MessagePostedEvent.class) {
+            return new MessagePostedEvent(
+                    tenantId,
+                    outboxEvent.getAggregateId(),
+                    requiredText(data, "channelId"),
+                    requiredText(data, "authorUserId"),
+                    requiredText(data, "body")
+            );
+        }
+
+        throw new IllegalArgumentException("Unsupported event class: " + eventClass.getName());
+    }
+
+    private String requiredText(JsonNode data, String fieldName) {
+        JsonNode value = data.path(fieldName);
+        if (value.isMissingNode() || value.isNull() || value.asText().isBlank()) {
+            throw new IllegalArgumentException("Missing outbox event field: " + fieldName);
+        }
+        return value.asText();
     }
 }

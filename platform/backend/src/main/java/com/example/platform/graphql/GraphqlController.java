@@ -1,5 +1,6 @@
 package com.example.platform.graphql;
 
+import com.example.platform.common.web.RequestContexts;
 import com.example.platform.documents.application.DocumentsFacade;
 import com.example.platform.tasks.application.TasksFacade;
 import java.util.List;
@@ -20,28 +21,29 @@ public class GraphqlController {
 
     @QueryMapping
     public TasksFacade.TaskView task(@Argument String id) {
-        return tasksFacade.getTask(id);
+        return tasksFacade.getTask(id, RequestContexts.current().userId());
     }
 
     @QueryMapping
     public List<TasksFacade.TaskView> tasks(@Argument String workspaceId) {
-        return tasksFacade.listTasks(workspaceId);
+        return tasksFacade.listTasks(workspaceId, RequestContexts.current().userId(), 0, 50);
     }
 
     @QueryMapping
     public DocumentsFacade.DocumentView document(@Argument String id) {
-        return documentsFacade.getDocument(id);
+        return documentsFacade.getDocument(id, RequestContexts.current().userId());
     }
 
     @QueryMapping
     public List<DocumentsFacade.DocumentView> documents(@Argument String workspaceId) {
-        return documentsFacade.listDocuments(workspaceId);
+        return documentsFacade.listDocuments(workspaceId, RequestContexts.current().userId(), 0, 50);
     }
 
     @QueryMapping
     public DashboardView dashboard(@Argument String workspaceId) {
-        List<TasksFacade.TaskView> tasks = tasksFacade.listTasks(workspaceId);
-        List<DocumentsFacade.DocumentView> documents = documentsFacade.listDocuments(workspaceId);
+        String userId = RequestContexts.current().userId();
+        List<TasksFacade.TaskView> tasks = tasksFacade.listTasks(workspaceId, userId, 0, 50);
+        List<DocumentsFacade.DocumentView> documents = documentsFacade.listDocuments(workspaceId, userId, 0, 50);
         return new DashboardView(tasks, documents);
     }
 

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -32,8 +33,12 @@ public class MessagingController {
     }
 
     @GetMapping("/workspaces/{workspaceId}/channels")
-    public List<MessagingFacade.ChannelView> listChannels(@PathVariable String workspaceId) {
-        return facade.listChannels(workspaceId);
+    public List<MessagingFacade.ChannelView> listChannels(
+            @PathVariable String workspaceId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return facade.listChannels(workspaceId, RequestContexts.current().userId(), page, size);
     }
 
     @PostMapping("/channels/{channelId}/messages")
@@ -45,8 +50,12 @@ public class MessagingController {
     }
 
     @GetMapping("/channels/{channelId}/messages")
-    public List<MessagingFacade.MessageView> listMessages(@PathVariable String channelId) {
-        return facade.listMessages(channelId);
+    public List<MessagingFacade.MessageView> listMessages(
+            @PathVariable String channelId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return facade.listMessages(channelId, RequestContexts.current().userId(), page, size);
     }
 
     @PostMapping("/messages/{messageId}/replies")

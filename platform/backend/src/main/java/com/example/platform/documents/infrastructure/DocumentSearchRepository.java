@@ -17,6 +17,7 @@ import org.opensearch.client.ResponseException;
 import org.opensearch.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Pageable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
@@ -63,9 +64,21 @@ public class DocumentSearchRepository {
     public List<DocumentSearchDocument> findByWorkspaceIdAndTitleContainsOrContentContains(
             String workspaceId, String titleQuery, String contentQuery
     ) {
+        return findByWorkspaceIdAndTitleContainsOrContentContains(
+                workspaceId,
+                titleQuery,
+                contentQuery,
+                Pageable.ofSize(50)
+        );
+    }
+
+    public List<DocumentSearchDocument> findByWorkspaceIdAndTitleContainsOrContentContains(
+            String workspaceId, String titleQuery, String contentQuery, Pageable pageable
+    ) {
         String query = titleQuery == null || titleQuery.isBlank() ? contentQuery : titleQuery;
         Map<String, Object> payload = Map.of(
-                "size", 50,
+                "from", Math.toIntExact(pageable.getOffset()),
+                "size", pageable.getPageSize(),
                 "query", Map.of(
                         "bool", Map.of(
                                 "filter", List.of(

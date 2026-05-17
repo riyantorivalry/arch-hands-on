@@ -1,7 +1,11 @@
 package com.example.platform.tenantmanagement.api;
 
+import com.example.platform.common.web.RequestContexts;
 import com.example.platform.tenantmanagement.application.TenantManagementFacade;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -23,7 +27,7 @@ public class TenantManagementController {
     }
 
     @PostMapping("/tenants")
-    public TenantManagementFacade.TenantView createTenant(@RequestBody CreateTenantRequest request) {
+    public TenantManagementFacade.TenantView createTenant(@Valid @RequestBody CreateTenantRequest request) {
         return facade.createTenant(
                 request.tenantName(),
                 request.workspaceName(),
@@ -36,24 +40,29 @@ public class TenantManagementController {
     @PostMapping("/tenants/{tenantId}/workspaces")
     public TenantManagementFacade.WorkspaceView createWorkspace(
             @PathVariable String tenantId,
-            @RequestBody CreateWorkspaceRequest request
+            @Valid @RequestBody CreateWorkspaceRequest request
     ) {
-        return new TenantManagementFacade.WorkspaceView(
-                "workspace-" + request.workspaceName().toLowerCase().replace(" ", "-"),
-                tenantId,
-                request.workspaceName(),
-                "ACTIVE"
-        );
+        var context = RequestContexts.authenticated();
+        return facade.createWorkspace(tenantId, context.workspaceId(), context.userId(), request.workspaceName());
     }
 
     @GetMapping("/workspaces/{workspaceId}")
     public TenantManagementFacade.WorkspaceView getWorkspace(@PathVariable String workspaceId) {
-        return facade.getWorkspace(workspaceId);
+        return facade.getWorkspace(workspaceId, RequestContexts.authenticated().userId());
     }
 
     @PatchMapping("/workspaces/{workspaceId}/settings")
-    public TenantManagementFacade.WorkspaceView updateWorkspaceSettings(@PathVariable String workspaceId) {
-        return facade.updateWorkspaceSettings(workspaceId);
+    public TenantManagementFacade.WorkspaceSettingsView updateWorkspaceSettings(
+            @PathVariable String workspaceId,
+            @Valid @RequestBody UpdateWorkspaceSettingsRequest request
+    ) {
+        return facade.updateWorkspaceSettings(
+                workspaceId,
+                RequestContexts.authenticated().userId(),
+                request.defaultDocumentStatus(),
+                request.taskAutoAssignEnabled(),
+                request.messageRetentionDays()
+        );
     }
 
     public record CreateTenantRequest(
@@ -66,5 +75,12 @@ public class TenantManagementController {
     }
 
     public record CreateWorkspaceRequest(@NotBlank String workspaceName) {
+    }
+
+    public record UpdateWorkspaceSettingsRequest(
+            String defaultDocumentStatus,
+            Boolean taskAutoAssignEnabled,
+            @Min(1) @Max(3650) Integer messageRetentionDays
+    ) {
     }
 }

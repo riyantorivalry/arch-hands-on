@@ -2,6 +2,7 @@ package com.example.platform.messaging.application;
 
 import com.example.platform.common.audit.AuditLogger;
 import com.example.platform.common.domain.DomainEventPublisher;
+import com.example.platform.common.web.AuthorizationDeniedException;
 import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
@@ -13,11 +14,16 @@ import java.text.Normalizer;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class MessagingFacade {
+
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final com.example.platform.messaging.infrastructure.ChannelRepository channelRepository;
     private final com.example.platform.messaging.infrastructure.MessageRepository messageRepository;
@@ -63,7 +69,15 @@ public class MessagingFacade {
 
     @Transactional(readOnly = true)
     public List<ChannelView> listChannels(String workspaceId) {
-        return channelRepository.findByWorkspaceIdOrderByNameAsc(workspaceId).stream()
+        return listChannels(workspaceId, null, 0, DEFAULT_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChannelView> listChannels(String workspaceId, String userId, int page, int size) {
+        if (userId != null) {
+            requireActiveMembership(workspaceId, userId);
+        }
+        return channelRepository.findByWorkspaceIdOrderByNameAsc(workspaceId, pageRequest(page, size)).stream()
                 .map(this::toChannelView)
                 .toList();
     }
@@ -98,7 +112,17 @@ public class MessagingFacade {
 
     @Transactional(readOnly = true)
     public List<MessageView> listMessages(String channelId) {
-        return messageRepository.findByChannelIdOrderByCreatedAtAsc(channelId).stream()
+        return listMessages(channelId, null, 0, DEFAULT_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MessageView> listMessages(String channelId, String userId, int page, int size) {
+        var channel = channelRepository.findById(channelId)
+                .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + channelId));
+        if (userId != null) {
+            requireActiveMembership(channel.getWorkspaceId(), userId);
+        }
+        return messageRepository.findByChannelIdOrderByCreatedAtAsc(channelId, pageRequest(page, size)).stream()
                 .map(this::toMessageView)
                 .toList();
     }
@@ -108,6 +132,9 @@ public class MessagingFacade {
         var membership = requireActiveMembership(workspaceId, authorUserId);
         var parent = messageRepository.findById(messageId)
                 .orElseThrow(() -> new IllegalArgumentException("Parent message not found: " + messageId));
+        if (!workspaceId.equals(parent.getWorkspaceId())) {
+            throw new IllegalArgumentException("Parent message not found in workspace " + workspaceId);
+        }
         MessageEntity saved = messageRepository.save(new MessageEntity(
                 "message-" + UUID.randomUUID(),
                 membership.getTenantId(),
@@ -161,10 +188,16 @@ public class MessagingFacade {
 
     private com.example.platform.identityaccess.domain.MembershipEntity requireActiveMembership(String workspaceId, String userId) {
         var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("User is not a member of workspace " + workspaceId));
+                .orElseThrow(() -> new AuthorizationDeniedException("User is not a member of workspace " + workspaceId));
         if (membership.getStatus() != MembershipStatus.ACTIVE) {
             throw new IllegalStateException("Membership is not active for user " + userId);
         }
         return membership;
+    }
+
+    private Pageable pageRequest(int page, int size) {
+        int normalizedPage = Math.max(page, 0);
+        int normalizedSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        return PageRequest.of(normalizedPage, normalizedSize);
     }
 }
