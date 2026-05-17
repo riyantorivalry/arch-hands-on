@@ -1,5 +1,6 @@
 package com.example.platform.common.infrastructure;
 
+import com.example.platform.common.infrastructure.cache.CacheService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

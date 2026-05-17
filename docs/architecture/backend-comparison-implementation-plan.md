@@ -743,6 +743,95 @@ Comparison metrics:
 - backward compatibility
 - debugging complexity
 
+## 6.7 Cache Strategy
+
+Cache strategy should primarily use **feature toggles**, because product APIs should not change when cache infrastructure changes.
+
+Reference configuration:
+
+```yaml
+platform:
+  feature:
+    cache:
+      mode: caffeine
+```
+
+### Mode: Caffeine
+
+Implementation:
+
+- in-process Caffeine cache
+- no external infrastructure
+- deterministic local and test default
+
+Good for:
+
+- local development
+- single-node deployments
+- low operational overhead
+
+Weakness:
+
+- no cross-node sharing
+- cache contents are lost on process restart
+
+### Mode: Redis
+
+Implementation:
+
+- existing Spring `RedisTemplate`
+- shared external cache
+- TTL and atomic increment support
+
+Good for:
+
+- rate limiting across application nodes
+- shared ephemeral data
+- simple operational model when Redis already exists
+
+Weakness:
+
+- additional network dependency
+- needs explicit outage and latency handling
+
+### Mode: Memcached
+
+Implementation:
+
+- Memcached text protocol client
+- simple distributed key/value cache
+- no durable storage guarantees
+
+Good for:
+
+- lightweight distributed caching
+- simple get/set workloads
+
+Weakness:
+
+- limited introspection
+- no native key-pattern deletion
+- TTL visibility is not exposed by the protocol
+
+Benchmark endpoints:
+
+```text
+GET    /api/benchmarks/cache/strategy
+POST   /api/benchmarks/cache/{strategy}/entries
+GET    /api/benchmarks/cache/{strategy}/entries/{key}
+POST   /api/benchmarks/cache/{strategy}/counters/{key}/increment
+DELETE /api/benchmarks/cache/{strategy}/entries/{key}
+```
+
+Comparison metrics:
+
+- get/set latency
+- increment latency
+- hit ratio
+- memory usage
+- external dependency failure behavior
+- operational overhead
+
 ## 7. Implementation Sequence
 
 ### Step 1: Stabilize Baseline
