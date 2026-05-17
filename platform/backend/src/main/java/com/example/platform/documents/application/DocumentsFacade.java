@@ -4,6 +4,8 @@ import com.example.platform.analytics.application.AnalyticsService;
 import com.example.platform.common.audit.AuditLogger;
 import com.example.platform.common.domain.DomainEventPublisher;
 import com.example.platform.common.web.AuthorizationDeniedException;
+import com.example.platform.documents.application.search.DocumentSearchComparisonService;
+import com.example.platform.documents.application.search.DocumentSearchResult;
 import com.example.platform.identityaccess.application.AuthorizationService;
 import com.example.platform.documents.domain.DocumentCommentEntity;
 import com.example.platform.documents.domain.DocumentCreatedEvent;
@@ -26,9 +28,7 @@ import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class DocumentsFacade {
@@ -47,7 +47,7 @@ public class DocumentsFacade {
     private final DomainEventPublisher domainEventPublisher;
     private final AnalyticsService analyticsService;
     private final DocumentSearchRepository documentSearchRepository;
-    private final TransactionTemplate transactionTemplate;
+    private final DocumentSearchComparisonService documentSearchComparisonService;
 
     public DocumentsFacade(
             DocumentRepository documentRepository,
@@ -58,7 +58,7 @@ public class DocumentsFacade {
             DomainEventPublisher domainEventPublisher,
             AnalyticsService analyticsService,
             DocumentSearchRepository documentSearchRepository,
-            PlatformTransactionManager transactionManager
+            DocumentSearchComparisonService documentSearchComparisonService
     ) {
         this.documentRepository = documentRepository;
         this.documentCommentRepository = documentCommentRepository;
@@ -68,8 +68,7 @@ public class DocumentsFacade {
         this.domainEventPublisher = domainEventPublisher;
         this.analyticsService = analyticsService;
         this.documentSearchRepository = documentSearchRepository;
-        this.transactionTemplate = new TransactionTemplate(transactionManager);
-        this.transactionTemplate.setReadOnly(true);
+        this.documentSearchComparisonService = documentSearchComparisonService;
     }
 
     @Transactional
@@ -128,38 +127,20 @@ public class DocumentsFacade {
             requireActiveMembership(workspaceId, userId);
         }
         Pageable pageable = pageRequest(page, size);
-        List<DocumentView> results;
-        try {
-            results = transactionTemplate.execute(status -> searchDocumentsWithOpenSearch(workspaceId, query, pageable));
-        } catch (RuntimeException exception) {
-            auditLogger.logWrite("documents", "search", "workspace", workspaceId, "OPENSEARCH_FALLBACK: " + exception.getMessage());
-            results = transactionTemplate.execute(status -> searchDocumentsWithPostgres(workspaceId, query, pageable));
-        }
-
+        List<DocumentView> results = documentSearchComparisonService.search("v3", workspaceId, query, pageable).stream()
+                .map(this::toDocumentView)
+                .toList();
         analyticsService.trackSearch(query, results.size());
         return results;
     }
 
-    private List<DocumentView> searchDocumentsWithOpenSearch(String workspaceId, String query, Pageable pageable) {
-        return documentSearchRepository
-                .findByWorkspaceIdAndTitleContainsOrContentContains(workspaceId, query, query, pageable)
-                .stream()
-                .map(doc -> new DocumentView(
-                        doc.getDocumentId(),
-                        doc.getWorkspaceId(),
-                        doc.getTitle(),
-                        doc.getContent(),
-                        doc.getStatus(),
-                        doc.getCreatedByUserId(),
-                        doc.getLastModifiedByUserId()
-                ))
-                .toList();
-    }
-
-    private List<DocumentView> searchDocumentsWithPostgres(String workspaceId, String query, Pageable pageable) {
-        return documentRepository.searchByWorkspaceIdAndQuery(workspaceId, query, pageable).stream()
+    public List<DocumentView> searchDocumentsVersion(String version, String workspaceId, String userId, String query, int page, int size) {
+        requireActiveMembership(workspaceId, userId);
+        List<DocumentView> results = documentSearchComparisonService.search(version, workspaceId, query, pageRequest(page, size)).stream()
                 .map(this::toDocumentView)
                 .toList();
+        analyticsService.trackSearch(query, results.size());
+        return results;
     }
 
     @Transactional(readOnly = true)
@@ -251,6 +232,18 @@ public class DocumentsFacade {
                 document.getStatus().name(),
                 document.getCreatedByUserId(),
                 document.getLastModifiedByUserId()
+        );
+    }
+
+    private DocumentView toDocumentView(DocumentSearchResult result) {
+        return new DocumentView(
+                result.documentId(),
+                result.workspaceId(),
+                result.title(),
+                result.content(),
+                result.status(),
+                result.createdByUserId(),
+                result.lastModifiedByUserId()
         );
     }
 

@@ -73,6 +73,19 @@ spring:
         read-only: true
 ```
 
+## MongoDB Analytics
+
+The local Docker Compose MongoDB instance enables authentication. The default Spring
+configuration connects with the same credentials:
+
+```text
+SPRING_DATA_MONGODB_USERNAME=admin
+SPRING_DATA_MONGODB_PASSWORD=secretpassword
+SPRING_DATA_MONGODB_AUTHENTICATION_DATABASE=admin
+```
+
+Override those variables when using a different MongoDB instance.
+
 ## Observability
 
 Complete observability infrastructure is included:

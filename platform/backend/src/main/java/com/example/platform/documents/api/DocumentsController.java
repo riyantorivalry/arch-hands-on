@@ -54,6 +54,36 @@ public class DocumentsController {
         return facade.searchDocuments(workspaceId, RequestContexts.current().userId(), query, page, size);
     }
 
+    @GetMapping("/v1/workspaces/{workspaceId}/documents/search")
+    public List<DocumentsFacade.DocumentView> searchDocumentsV1(
+            @PathVariable String workspaceId,
+            @RequestParam String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return facade.searchDocumentsVersion("v1", workspaceId, RequestContexts.current().userId(), query, page, size);
+    }
+
+    @GetMapping("/v2/workspaces/{workspaceId}/documents/search")
+    public List<DocumentsFacade.DocumentView> searchDocumentsV2(
+            @PathVariable String workspaceId,
+            @RequestParam String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return facade.searchDocumentsVersion("v2", workspaceId, RequestContexts.current().userId(), query, page, size);
+    }
+
+    @GetMapping("/v3/workspaces/{workspaceId}/documents/search")
+    public List<DocumentsFacade.DocumentView> searchDocumentsV3(
+            @PathVariable String workspaceId,
+            @RequestParam String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return facade.searchDocumentsVersion("v3", workspaceId, RequestContexts.current().userId(), query, page, size);
+    }
+
     @GetMapping("/documents/{documentId}")
     public DocumentsFacade.DocumentView getDocument(@PathVariable String documentId) {
         return facade.getDocument(documentId, RequestContexts.current().userId());

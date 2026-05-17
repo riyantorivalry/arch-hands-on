@@ -40,6 +40,9 @@ spring:
       host: localhost
       port: 27017
       database: platform_analytics
+      username: ${SPRING_DATA_MONGODB_USERNAME:admin}
+      password: ${SPRING_DATA_MONGODB_PASSWORD:secretpassword}
+      authentication-database: ${SPRING_DATA_MONGODB_AUTHENTICATION_DATABASE:admin}
     elasticsearch:
       uris: ${SPRING_DATA_ELASTICSEARCH_URIS:http://localhost:9200}
       username: ${SPRING_DATA_ELASTICSEARCH_USERNAME:}

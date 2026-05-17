@@ -215,6 +215,24 @@ class PlatformWorkflowIntegrationTests {
                 .andExpect(jsonPath("$[0].documentId").value(persistedDocumentId))
                 .andExpect(jsonPath("$[0].title").value("Architecture Notes"));
 
+        mockMvc.perform(get("/api/v1/workspaces/workspace-engineering/documents/search?query=architecture")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].documentId").value(persistedDocumentId))
+                .andExpect(jsonPath("$[0].title").value("Architecture Notes"));
+
+        mockMvc.perform(get("/api/v2/workspaces/workspace-engineering/documents/search?query=architecture")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].documentId").value(persistedDocumentId))
+                .andExpect(jsonPath("$[0].title").value("Architecture Notes"));
+
+        mockMvc.perform(get("/api/v3/workspaces/workspace-engineering/documents/search?query=architecture")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].documentId").value(persistedDocumentId))
+                .andExpect(jsonPath("$[0].title").value("Architecture Notes"));
+
         mockMvc.perform(get("/api/workspaces/workspace-platform/documents")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden());
