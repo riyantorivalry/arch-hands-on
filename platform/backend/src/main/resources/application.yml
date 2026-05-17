@@ -133,6 +133,9 @@ server:
   shutdown: graceful
 
 platform:
+  grpc:
+    enabled: ${PLATFORM_GRPC_ENABLED:false}
+    port: ${PLATFORM_GRPC_PORT:9090}
   feature:
     cache:
       mode: ${PLATFORM_FEATURE_CACHE_MODE:caffeine}

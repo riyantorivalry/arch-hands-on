@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package platform.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_multiple_files = true;
+option java_package = "com.example.platform.grpc.proto";
+option java_outer_classname = "PlatformQueryProto";
+
+service PlatformQueryService {
+  rpc ListTasks(google.protobuf.StringValue) returns (google.protobuf.Struct);
+  rpc ListDocuments(google.protobuf.StringValue) returns (google.protobuf.Struct);
+}

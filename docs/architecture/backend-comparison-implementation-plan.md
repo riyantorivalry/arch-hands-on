@@ -735,6 +735,20 @@ Good for:
 - service-to-service calls
 - Protobuf contract comparison
 
+Initial branch scope:
+
+- keep REST as the baseline product API
+- add optional internal gRPC server on `PLATFORM_GRPC_PORT`
+- expose read-oriented query service methods first
+- keep gRPC disabled by default for local/test REST parity
+
+Current experimental service:
+
+```text
+platform.v1.PlatformQueryService/ListTasks
+platform.v1.PlatformQueryService/ListDocuments
+```
+
 Comparison metrics:
 
 - payload size

@@ -190,6 +190,26 @@ Allowed `{algorithm}` values are `fixed-window`, `sliding-window`, and `token-bu
 }
 ```
 
+## gRPC Internal API Experiment
+
+The `experiment/grpc-internal-api` branch adds an optional gRPC server alongside the existing REST and GraphQL APIs. It is disabled by default so the REST-only backend remains the baseline.
+
+Enable it with:
+
+```text
+PLATFORM_GRPC_ENABLED=true
+PLATFORM_GRPC_PORT=9090
+```
+
+Current internal service:
+
+```text
+platform.v1.PlatformQueryService/ListTasks
+platform.v1.PlatformQueryService/ListDocuments
+```
+
+The IDL lives at `src/main/proto/platform_query.proto`. The implementation currently uses standard protobuf `StringValue` requests and `Struct` responses so the branch can run without adding a generated-code build step yet.
+
 ## Observability
 
 Complete observability infrastructure is included:
