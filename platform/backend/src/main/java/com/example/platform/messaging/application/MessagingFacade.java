@@ -101,8 +101,8 @@ public class MessagingFacade {
         // Publish domain event
         domainEventPublisher.publish(new MessagePostedEvent(
                 membership.getTenantId(),
-                channelId,
                 saved.getMessageId(),
+                channel.getChannelId(),
                 authorUserId,
                 body
         ));
@@ -149,8 +149,8 @@ public class MessagingFacade {
         // Publish domain event
         domainEventPublisher.publish(new MessagePostedEvent(
                 membership.getTenantId(),
-                parent.getChannelId(),
                 saved.getMessageId(),
+                parent.getChannelId(),
                 authorUserId,
                 body
         ));

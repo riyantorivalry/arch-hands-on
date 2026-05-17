@@ -33,6 +33,7 @@ Current modules:
 - `messaging`
 - `documents`
 - `tasks`
+- `realtime`
 
 ## Current scope
 
@@ -45,6 +46,22 @@ This scaffold establishes:
 - health and platform info endpoints
 
 Feature persistence and domain rules should be added module by module from the Phase 1 contracts.
+
+## Realtime Delivery Comparison
+
+Realtime updates use one shared versioned event envelope across the comparison endpoints:
+
+```text
+GET /api/v1/workspaces/{workspaceId}/events?since={cursor}
+GET /api/v2/workspaces/{workspaceId}/events/stream?since={cursor}
+WS  /ws/v3/realtime
+```
+
+The polling response returns `nextCursor`; pass that value as `since` on the next request. The SSE stream uses the event version as the SSE event ID. The WebSocket endpoint accepts subscription messages like:
+
+```json
+{"action":"subscribe","workspaceId":"workspace-engineering"}
+```
 
 ## Postgres Master-Replica Routing
 

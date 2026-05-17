@@ -1,7 +1,7 @@
 package com.example.platform.common.web;
 
-import com.example.platform.common.domain.DomainEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.platform.realtime.application.RealtimeEventService.RealtimeEvent;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
@@ -17,7 +17,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 /**
  * WebSocket handler for realtime event broadcasts.
- * Phase 2: Manages active WebSocket connections and broadcasts events to subscribed clients.
+ * Manages active WebSocket connections and broadcasts events to subscribed clients.
  *
  * Each session can subscribe to events for their workspace/tenant.
  * Events are broadcast to connected clients in real-time via WebSocket.
@@ -89,15 +89,16 @@ public class RealtimeEventHandler extends TextWebSocketHandler {
     }
 
     /**
-     * Broadcast a domain event to all connected clients subscribed to the event's workspace.
+     * Broadcast a realtime event to all connected clients subscribed to the event's workspace.
      * Called by EventRealtimeBroadcaster listener.
      */
-    public void broadcastEvent(String workspaceId, String tenantId, DomainEvent event) {
+    public void broadcastEvent(RealtimeEvent event) {
         RealtimeMessage msg = new RealtimeMessage(
             "event",
-            workspaceId,
-            event.getEventType(),
-            event
+            event.workspaceId(),
+            event.eventType(),
+            event,
+            event.version()
         );
 
         sessions.forEach((sessionId, session) -> {
@@ -110,13 +111,13 @@ public class RealtimeEventHandler extends TextWebSocketHandler {
                 // Broadcast if:
                 // 1. Client is subscribed to the specific workspace, OR
                 // 2. workspaceId is null (tenant-wide broadcast) and client has any subscription for this tenant
-                boolean shouldBroadcast = (workspaceId != null && sessionSubscriptions.contains(workspaceId)) ||
-                                        (workspaceId == null && !sessionSubscriptions.isEmpty());
+                boolean shouldBroadcast = (event.workspaceId() != null && sessionSubscriptions.contains(event.workspaceId())) ||
+                                        (event.workspaceId() == null && !sessionSubscriptions.isEmpty());
 
                 if (shouldBroadcast) {
                     try {
                         sendMessage(session, msg);
-                        LOGGER.debug("Event broadcasted to session {}: type={}", sessionId, event.getEventType());
+                        LOGGER.debug("Event broadcasted to session {}: type={}", sessionId, event.eventType());
                     } catch (IOException e) {
                         LOGGER.warn("Error sending message to session {}", sessionId, e);
                     }
@@ -153,14 +154,20 @@ public class RealtimeEventHandler extends TextWebSocketHandler {
         public String action;
         public String workspaceId;
         public String eventType;
+        public Long version;
         public Object data;
 
         public RealtimeMessage() {}
 
         public RealtimeMessage(String action, String workspaceId, String eventType, Object data) {
+            this(action, workspaceId, eventType, data, null);
+        }
+
+        public RealtimeMessage(String action, String workspaceId, String eventType, Object data, Long version) {
             this.action = action;
             this.workspaceId = workspaceId;
             this.eventType = eventType;
+            this.version = version;
             this.data = data;
         }
     }

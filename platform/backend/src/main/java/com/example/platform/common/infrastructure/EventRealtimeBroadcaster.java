@@ -10,22 +10,31 @@ import com.example.platform.tasks.domain.TaskAssignedEvent;
 import com.example.platform.tasks.domain.TaskCreatedEvent;
 import com.example.platform.tasks.domain.TaskStatusChangedEvent;
 import com.example.platform.tenantmanagement.domain.TenantCreatedEvent;
+import com.example.platform.messaging.infrastructure.ChannelRepository;
+import com.example.platform.realtime.application.RealtimeEventService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Broadcasts domain events to WebSocket clients for realtime updates.
- * Phase 2: Sends events to subscribed clients as they happen.
+ * Records domain events and broadcasts them to realtime clients.
  */
 @Component
 @ConditionalOnBean(RealtimeEventHandler.class)
 public class EventRealtimeBroadcaster {
 
     private final RealtimeEventHandler realtimeEventHandler;
+    private final RealtimeEventService realtimeEventService;
+    private final ChannelRepository channelRepository;
 
-    public EventRealtimeBroadcaster(RealtimeEventHandler realtimeEventHandler) {
+    public EventRealtimeBroadcaster(
+            RealtimeEventHandler realtimeEventHandler,
+            RealtimeEventService realtimeEventService,
+            ChannelRepository channelRepository
+    ) {
         this.realtimeEventHandler = realtimeEventHandler;
+        this.realtimeEventService = realtimeEventService;
+        this.channelRepository = channelRepository;
     }
 
     @EventListener
@@ -40,10 +49,10 @@ public class EventRealtimeBroadcaster {
 
     @EventListener
     public void onMessagePosted(MessagePostedEvent event) {
-        // For messages, we need to determine workspace from channel
-        // For Phase 2, we'll broadcast to tenant scope for now
-        // TODO: Add workspaceId to MessagePostedEvent or look up from channel
-        broadcastEventToTenant(event.getTenantId(), event);
+        String workspaceId = channelRepository.findById(event.getChannelId())
+                .map(channel -> channel.getWorkspaceId())
+                .orElse(null);
+        broadcastEventToWorkspace(workspaceId, event.getTenantId(), event);
     }
 
     @EventListener
@@ -72,10 +81,11 @@ public class EventRealtimeBroadcaster {
     }
 
     private void broadcastEventToWorkspace(String workspaceId, String tenantId, DomainEvent event) {
-        realtimeEventHandler.broadcastEvent(workspaceId, tenantId, event);
+        var realtimeEvent = realtimeEventService.append(tenantId, workspaceId, event);
+        realtimeEventHandler.broadcastEvent(realtimeEvent);
     }
 
     private void broadcastEventToTenant(String tenantId, DomainEvent event) {
-        realtimeEventHandler.broadcastEvent(null, tenantId, event);
+        broadcastEventToWorkspace(null, tenantId, event);
     }
 }

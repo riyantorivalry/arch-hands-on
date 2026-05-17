@@ -12,6 +12,7 @@ tags:
   - name: Messaging
   - name: Documents
   - name: Tasks
+  - name: Realtime
   - name: Platform
   - name: GraphQL
 security:
@@ -127,6 +128,69 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/workspaces/{workspaceId}/events:
+    get:
+      tags:
+        - Realtime
+      summary: Poll versioned realtime events for a workspace.
+      description: Polling baseline for realtime comparison. Use `nextCursor` as the next `since` value.
+      operationId: pollRealtimeEventsV1
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/SinceCursor"
+      responses:
+        "200":
+          description: Versioned workspace events after the supplied cursor.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimePollResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/workspaces/{workspaceId}/events/stream:
+    get:
+      tags:
+        - Realtime
+      summary: Stream versioned realtime events for a workspace using Server-Sent Events.
+      description: SSE comparison endpoint. Each event uses the event version as the SSE `id`.
+      operationId: streamRealtimeEventsV2
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/SinceCursor"
+      responses:
+        "200":
+          description: Server-Sent Event stream of versioned realtime events.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/RealtimeEvent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /ws/v3/realtime:
+    get:
+      tags:
+        - Realtime
+      summary: WebSocket realtime endpoint for bidirectional subscriptions.
+      description: Send `{"action":"subscribe","workspaceId":"workspace-id"}` to receive versioned realtime event envelopes.
+      operationId: realtimeWebSocketV3
+      responses:
+        "101":
+          description: WebSocket protocol upgrade.
 
   /api/auth/login:
     post:
@@ -808,6 +872,16 @@ components:
       required: true
       schema:
         type: string
+    SinceCursor:
+      name: since
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int64
+        default: 0
+        minimum: 0
+      description: Last observed realtime event version. Events with greater versions are returned.
 
   headers:
     CorrelationId:
@@ -1268,6 +1342,62 @@ components:
           type: string
         body:
           type: string
+
+    RealtimePollResponse:
+      type: object
+      required:
+        - nextCursor
+        - events
+      properties:
+        nextCursor:
+          type: integer
+          format: int64
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/RealtimeEvent"
+
+    RealtimeEvent:
+      type: object
+      required:
+        - version
+        - schemaVersion
+        - eventId
+        - eventType
+        - tenantId
+        - aggregateId
+        - occurredAt
+        - recordedAt
+        - payload
+      properties:
+        version:
+          type: integer
+          format: int64
+        schemaVersion:
+          type: string
+          example: realtime.event.v1
+        eventId:
+          type: string
+        eventType:
+          type: string
+          example: DocumentCreatedEvent
+        tenantId:
+          type: string
+        workspaceId:
+          type:
+            - string
+            - "null"
+        aggregateId:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+        recordedAt:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
 
     PlatformInfoResponse:
       type: object
