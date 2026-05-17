@@ -2,14 +2,32 @@ global:
   resolve_timeout: 5m
 
 route:
-  receiver: 'default'
-  group_wait: 10s
+  receiver: 'ops-ticket'
+  group_by: ['alertname', 'service', 'severity']
+  group_wait: 30s
   group_interval: 5m
-  repeat_interval: 3h
+  repeat_interval: 4h
+  routes:
+    - receiver: 'on-call-page'
+      matchers:
+        - severity="page"
+      group_wait: 10s
+      repeat_interval: 1h
+    - receiver: 'ops-ticket'
+      matchers:
+        - severity="ticket"
+      repeat_interval: 8h
+
+inhibit_rules:
+  - source_matchers:
+      - alertname="PlatformBackendDown"
+    target_matchers:
+      - service="platform-backend"
+    equal: ['service']
 
 receivers:
-  - name: 'default'
-    # No-op receiver; Add webhook/email/slack here for real notifications
-    webhook_configs:
-      - url: 'http://localhost:9094/'
+  - name: 'on-call-page'
+    # Configure PagerDuty/Opsgenie/Slack webhook integration for production paging.
+  - name: 'ops-ticket'
+    # Configure a ticketing or chatops integration for non-page alerts.
 

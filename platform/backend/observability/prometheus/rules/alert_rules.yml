@@ -1,26 +1,126 @@
 groups:
-  - name: platform-alerts
+  - name: platform-availability
     rules:
-      - alert: HighErrorRate
-        expr: |
-          (
-            increase(api_errors_total[5m])
-            /
-            increase(http_server_requests_seconds_count[5m])
-          ) > 0.05
+      - alert: PlatformBackendDown
+        expr: up{job="platform-backend"} == 0
         for: 2m
         labels:
           severity: page
+          service: platform-backend
         annotations:
-          summary: "High API error rate detected"
-          description: "API error rate > 5% over 5m ({{ $value }})"
+          summary: "Platform backend is not scrapeable"
+          description: "Prometheus has not been able to scrape platform-backend for 2 minutes."
 
-      - alert: SlowDatabaseQueries
-        expr: histogram_quantile(0.95, sum(rate(database_query_time_seconds_bucket[5m])) by (le)) > 1
+      - alert: ObservabilityTargetDown
+        expr: up{job!="platform-backend"} == 0
         for: 5m
         labels:
           severity: ticket
         annotations:
-          summary: "Slow database queries (95th percentile > 1s)"
-          description: "Database queries are slow; 95th percentile > 1s"
+          summary: "Observability target is down"
+          description: "{{ $labels.job }} target {{ $labels.instance }} has been down for 5 minutes."
 
+  - name: platform-slo
+    rules:
+      - alert: HighHttp5xxErrorRate
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{job="platform-backend",status=~"5..",uri!~"/actuator.*"}[5m]))
+            /
+            clamp_min(sum(rate(http_server_requests_seconds_count{job="platform-backend",uri!~"/actuator.*"}[5m])), 0.001)
+          ) > 0.02
+        for: 5m
+        labels:
+          severity: page
+          service: platform-backend
+        annotations:
+          summary: "High backend 5xx rate"
+          description: "5xx responses are above 2% for 5 minutes. Current value: {{ printf \"%.2f\" $value }}."
+
+      - alert: HighHttpLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_server_requests_seconds_bucket{job="platform-backend",uri!~"/actuator.*"}[5m])) by (le)
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: ticket
+          service: platform-backend
+        annotations:
+          summary: "High backend p95 latency"
+          description: "p95 HTTP latency has been above 500ms for 10 minutes."
+
+  - name: platform-runtime
+    rules:
+      - alert: JvmHeapPressureHigh
+        expr: |
+          (
+            sum(jvm_memory_used_bytes{job="platform-backend",area="heap"})
+            /
+            sum(jvm_memory_max_bytes{job="platform-backend",area="heap"})
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: ticket
+          service: platform-backend
+        annotations:
+          summary: "JVM heap pressure is high"
+          description: "Heap usage has been above 85% for 10 minutes."
+
+      - alert: EventPublishingFailures
+        expr: increase(events_failed_total{job="platform-backend"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: ticket
+          service: platform-backend
+        annotations:
+          summary: "Event publishing failures detected"
+          description: "Domain event publishing failures increased in the last 10 minutes."
+
+      - alert: OutboxBacklogGrowing
+        expr: outbox_unpublished_events{job="platform-backend"} > 100
+        for: 15m
+        labels:
+          severity: ticket
+          service: platform-backend
+        annotations:
+          summary: "Outbox backlog is high"
+          description: "Unpublished outbox events have remained above 100 for 15 minutes."
+
+  - name: postgres
+    rules:
+      - alert: PostgresExporterDown
+        expr: up{job=~"postgres-(primary|replica)"} == 0
+        for: 2m
+        labels:
+          severity: ticket
+          service: postgres
+        annotations:
+          summary: "PostgreSQL exporter is down"
+          description: "{{ $labels.job }} has not been scrapeable for 2 minutes."
+
+      - alert: PostgresConnectionsHigh
+        expr: |
+          (
+            100 * pg_stat_database_numbackends{datname="platform"}
+            / ignoring(datname) group_left
+            pg_settings_max_connections
+          ) > 80
+        for: 5m
+        labels:
+          severity: ticket
+          service: postgres
+        annotations:
+          summary: "PostgreSQL connection usage is high"
+          description: "{{ $labels.job }} is using more than 80% of max_connections for 5 minutes."
+
+      - alert: PostgresDeadlocksDetected
+        expr: increase(pg_stat_database_deadlocks{datname="platform"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: ticket
+          service: postgres
+        annotations:
+          summary: "PostgreSQL deadlocks detected"
+          description: "{{ $labels.job }} reported deadlocks in the last 5 minutes."

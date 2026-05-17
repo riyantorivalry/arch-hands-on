@@ -1,5 +1,7 @@
 package com.example.platform.common.infrastructure.observability;
 
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -39,6 +41,9 @@ public class ObservabilityFilter extends OncePerRequestFilter {
     @Autowired(required = false)
     private BusinessMetricsCollector metricsCollector;
 
+    @Autowired(required = false)
+    private Tracer tracer;
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -65,7 +70,7 @@ public class ObservabilityFilter extends OncePerRequestFilter {
         response.setHeader(REQUEST_ID_HEADER, requestId);
 
         try {
-            logger.info("HTTP request started - method: {}, path: {}, correlationId: {}",
+            logger.debug("HTTP request started - method: {}, path: {}, correlationId: {}",
                     request.getMethod(), request.getRequestURI(), correlationId);
 
             filterChain.doFilter(request, response);
@@ -99,6 +104,16 @@ public class ObservabilityFilter extends OncePerRequestFilter {
     }
 
     private String getOrCreateTraceId(HttpServletRequest request) {
+        if (tracer != null) {
+            Span currentSpan = tracer.currentSpan();
+            if (currentSpan != null && currentSpan.context() != null) {
+                String traceId = currentSpan.context().traceId();
+                if (traceId != null && !traceId.isBlank()) {
+                    return traceId;
+                }
+            }
+        }
+
         String traceId = request.getHeader(TRACE_ID_HEADER);
         if (traceId == null || traceId.isEmpty()) {
             traceId = UUID.randomUUID().toString();

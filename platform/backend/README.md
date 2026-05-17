@@ -12,7 +12,7 @@ This is the Phase 1 Java modular monolith scaffold with comprehensive observabil
 - Spring Boot Actuator
 - Micrometer Metrics & Tracing
 - Logback with JSON formatting
-- Spring Cloud Sleuth
+- Micrometer Tracing with OpenTelemetry OTLP export
 
 ## Module layout
 

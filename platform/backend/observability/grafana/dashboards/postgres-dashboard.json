@@ -1,0 +1,206 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "#000000",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {},
+      "targets": [
+        {
+          "expr": "hikaricp_connections_active{job=\"platform-backend\"}",
+          "legendFormat": "{{pool}} active",
+          "refId": "A"
+        },
+        {
+          "expr": "hikaricp_connections_idle{job=\"platform-backend\"}",
+          "legendFormat": "{{pool}} idle",
+          "refId": "B"
+        },
+        {
+          "expr": "hikaricp_connections_pending{job=\"platform-backend\"}",
+          "legendFormat": "{{pool}} pending",
+          "refId": "C"
+        }
+      ],
+      "title": "Application JDBC Pool Connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {},
+      "targets": [
+        {
+          "expr": "pg_stat_database_numbackends{datname=\"platform\"}",
+          "legendFormat": "{{role}} active backends",
+          "refId": "A"
+        }
+      ],
+      "title": "PostgreSQL Active Connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 },
+      "id": 3,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "100 * pg_stat_database_numbackends{datname=\"platform\"} / ignoring(datname) group_left pg_settings_max_connections",
+          "legendFormat": "{{role}}",
+          "refId": "A"
+        }
+      ],
+      "title": "PostgreSQL Connection Usage",
+      "type": "gauge"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 },
+      "id": 4,
+      "options": {},
+      "targets": [
+        {
+          "expr": "sum by (role, datname) (rate(pg_stat_database_xact_commit{datname=\"platform\"}[5m]))",
+          "legendFormat": "{{role}} commit",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (role, datname) (rate(pg_stat_database_xact_rollback{datname=\"platform\"}[5m]))",
+          "legendFormat": "{{role}} rollback",
+          "refId": "B"
+        }
+      ],
+      "title": "PostgreSQL Transactions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
+      "id": 5,
+      "options": {},
+      "targets": [
+        {
+          "expr": "100 * sum by (role, datname) (rate(pg_stat_database_blks_hit{datname=\"platform\"}[5m])) / clamp_min(sum by (role, datname) (rate(pg_stat_database_blks_hit{datname=\"platform\"}[5m]) + rate(pg_stat_database_blks_read{datname=\"platform\"}[5m])), 1)",
+          "legendFormat": "{{role}}",
+          "refId": "A"
+        }
+      ],
+      "title": "PostgreSQL Cache Hit Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 14 },
+      "id": 6,
+      "options": {},
+      "targets": [
+        {
+          "expr": "sum by (role, mode) (pg_locks_count{datname=\"platform\"})",
+          "legendFormat": "{{role}} {{mode}}",
+          "refId": "A"
+        }
+      ],
+      "title": "PostgreSQL Locks",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 14 },
+      "id": 7,
+      "options": {},
+      "targets": [
+        {
+          "expr": "increase(pg_stat_database_deadlocks{datname=\"platform\"}[5m])",
+          "legendFormat": "{{role}} deadlocks",
+          "refId": "A"
+        },
+        {
+          "expr": "increase(pg_stat_database_conflicts{datname=\"platform\"}[5m])",
+          "legendFormat": "{{role}} conflicts",
+          "refId": "B"
+        }
+      ],
+      "title": "PostgreSQL Deadlocks and Conflicts",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["platform", "postgres", "database"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Platform PostgreSQL - Connections",
+  "uid": "platform-postgresql-connections",
+  "version": 1
+}

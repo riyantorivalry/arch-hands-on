@@ -10,7 +10,7 @@
  * This module integrates:
  * - Spring Boot Actuator for metrics and health checks
  * - Micrometer for metrics collection
- * - Spring Cloud Sleuth for distributed tracing
+ * - Micrometer Tracing with OpenTelemetry export
  * - Logback with JSON encoding for structured logs
  * - AspectJ for method-level instrumentation
  *

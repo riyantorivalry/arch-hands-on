@@ -1,92 +1,139 @@
-version: '3.8'
-
 services:
   prometheus:
-    image: prom/prometheus:v2.50.1
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.11.3}
     container_name: observability_prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-15d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-10GB}
+      - --web.enable-lifecycle
+      - --web.external-url=${PROMETHEUS_EXTERNAL_URL:-http://localhost:9090}
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     ports:
-      - 9090:9090
+      - "9090:9090"
+    depends_on:
+      - alertmanager
+      - postgres-exporter-primary
+      - postgres-exporter-replica
+    restart: unless-stopped
+
+  postgres-exporter-primary:
+    image: ${POSTGRES_EXPORTER_IMAGE:-quay.io/prometheuscommunity/postgres-exporter:v0.19.1}
+    container_name: observability_postgres_exporter_primary
+    environment:
+      DATA_SOURCE_URI: ${POSTGRES_PRIMARY_EXPORTER_URI:-host.docker.internal:5432/platform?sslmode=disable}
+      DATA_SOURCE_USER: ${POSTGRES_PRIMARY_EXPORTER_USER:-platform}
+      DATA_SOURCE_PASS: ${POSTGRES_PRIMARY_EXPORTER_PASSWORD:-platform}
+      PG_EXPORTER_DISABLE_SETTINGS_METRICS: "false"
+    ports:
+      - "9187:9187"
+    restart: unless-stopped
+
+  postgres-exporter-replica:
+    image: ${POSTGRES_EXPORTER_IMAGE:-quay.io/prometheuscommunity/postgres-exporter:v0.19.1}
+    container_name: observability_postgres_exporter_replica
+    environment:
+      DATA_SOURCE_URI: ${POSTGRES_REPLICA_EXPORTER_URI:-host.docker.internal:5433/platform?sslmode=disable}
+      DATA_SOURCE_USER: ${POSTGRES_REPLICA_EXPORTER_USER:-platform}
+      DATA_SOURCE_PASS: ${POSTGRES_REPLICA_EXPORTER_PASSWORD:-platform}
+      PG_EXPORTER_DISABLE_SETTINGS_METRICS: "false"
+    ports:
+      - "9188:9187"
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:9.5.0
+    image: ${GRAFANA_IMAGE:-grafana/grafana:13.0.1-security-01}
     container_name: observability_grafana
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SERVER_ROOT_URL=http://localhost:3000
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in platform/backend/observability/.env}
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_LOG_MODE: console
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - 3000:3000
+      - "3000:3000"
     depends_on:
       - prometheus
       - loki
+      - tempo
     restart: unless-stopped
 
   loki:
-    image: grafana/loki:2.8.2
+    image: ${LOKI_IMAGE:-grafana/loki:3.7.2}
     container_name: observability_loki
     ports:
-      - 3100:3100
+      - "3100:3100"
     volumes:
+      - ./loki/config.yaml:/etc/loki/config.yaml:ro
       - loki-data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/config.yaml
     restart: unless-stopped
 
-  promtail:
-    image: grafana/promtail:2.8.2
-    container_name: observability_promtail
+  alloy:
+    image: ${ALLOY_IMAGE:-grafana/alloy:v1.16.1}
+    container_name: observability_alloy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
     volumes:
-      - ./loki/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
       - ../logs:/var/log/platform:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    command: -config.file=/etc/promtail/promtail-config.yaml
-    restart: unless-stopped
-
-  jaeger:
-    image: jaegertracing/all-in-one:1.41
-    container_name: observability_jaeger
+      - alloy-data:/var/lib/alloy
     ports:
-      - 16686:16686   # Jaeger UI
-      - 14268:14268   # Zipkin/OTLP collector endpoint
+      - "12345:12345"
+    depends_on:
+      - loki
     restart: unless-stopped
 
   alertmanager:
-    image: prom/alertmanager:v0.25.1
+    image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.32.1}
     container_name: observability_alertmanager
+    command:
+      - --config.file=/etc/alertmanager/config.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=${ALERTMANAGER_EXTERNAL_URL:-http://localhost:9093}
     volumes:
       - ./alertmanager/config.yml:/etc/alertmanager/config.yml:ro
       - alertmanager-data:/alertmanager
     ports:
-      - 9093:9093
+      - "9093:9093"
     restart: unless-stopped
 
   otel-collector:
-    image: otel/opentelemetry-collector:0.79.0
+    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector:0.152.0}
     container_name: observability_otel_collector
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./otel/collector-config.yaml:/etc/otel-collector-config.yaml:ro
     ports:
-      - 4317:4317   # OTLP gRPC (host -> collector)
-      - 4318:4318   # OTLP HTTP (host -> collector)
+      - "4317:4317"   # OTLP gRPC (host -> collector)
+      - "4318:4318"   # OTLP HTTP (host -> collector)
+      - "8889:8889"   # Prometheus scrape endpoint for OTLP metrics
+      - "13133:13133" # Collector health
     depends_on:
       - tempo
     restart: unless-stopped
 
   tempo:
-    image: grafana/tempo:1.5.0
+    image: ${TEMPO_IMAGE:-grafana/tempo:2.10.5}
     container_name: observability_tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
     ports:
-      - 3200:3200   # Tempo query/http
-      - 9411:9411   # Zipkin receiver
+      - "3200:3200"   # Tempo query/http
+      - "9411:9411"   # Zipkin receiver
     volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - tempo-data:/var/tempo
     restart: unless-stopped
 
@@ -98,8 +145,8 @@ services:
       - plugins.security.disabled=true
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
-      - 9200:9200   # OpenSearch API
-      - 9600:9600   # Performance Analyzer
+      - "9200:9200"   # OpenSearch API
+      - "9600:9600"   # Performance Analyzer
     volumes:
       - opensearch-data:/usr/share/opensearch/data
     restart: unless-stopped
@@ -108,7 +155,7 @@ services:
     image: opensearchproject/opensearch-dashboards:2.8.0
     container_name: observability_opensearch_dashboards
     ports:
-      - 5601:5601   # Dashboard UI
+      - "5601:5601"   # Dashboard UI
     environment:
       - OPENSEARCH_HOSTS=["http://opensearch:9200"]
     depends_on:
@@ -119,14 +166,15 @@ services:
     image: shopify/toxiproxy:2.1.4
     container_name: observability_toxiproxy
     ports:
-      - 8474:8474   # Toxiproxy REST API
-      - 9201:9201   # OpenSearch proxy for host-based backend traffic
+      - "8474:8474"   # Toxiproxy REST API
+      - "9201:9201"   # OpenSearch proxy for host-based backend traffic
     restart: unless-stopped
 
 volumes:
   prometheus-data:
   grafana-data:
   loki-data:
+  alloy-data:
   alertmanager-data:
   tempo-data:
   opensearch-data:

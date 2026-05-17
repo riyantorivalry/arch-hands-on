@@ -177,6 +177,44 @@ class PlatformWorkflowIntegrationTests {
                                 """))
                 .andExpect(status().isForbidden());
 
+        mockMvc.perform(patch("/api/documents/" + persistedDocumentId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Architecture Notes",
+                                  "content": "Initial collaboration platform notes",
+                                  "status": "IN_REVIEW"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_REVIEW"));
+
+        mockMvc.perform(patch("/api/documents/" + persistedDocumentId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Architecture Notes",
+                                  "content": "Initial collaboration platform notes",
+                                  "status": "ACTIVE"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+
+        mockMvc.perform(patch("/api/documents/" + persistedDocumentId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Architecture Notes",
+                                  "content": "Changing a published document without returning it to draft",
+                                  "status": "ACTIVE"
+                                }
+                                """))
+                .andExpect(status().isConflict());
+
         String taskPayload = mockMvc.perform(post("/api/workspaces/workspace-engineering/tasks")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -235,7 +273,7 @@ class PlatformWorkflowIntegrationTests {
                         .content("""
                                 {
                                   "title": "Member Task",
-                                  "description": "Owned by member",
+                                  "description": "Owned by member with completion notes",
                                   "assigneeUserId": "user-bob"
                                 }
                                 """))
@@ -251,13 +289,28 @@ class PlatformWorkflowIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "title": "Owner Override",
-                                  "description": "Allowed",
+                                  "title": "Owner Moves Task",
+                                  "description": "Owned by member with completion notes",
+                                  "status": "IN_PROGRESS",
+                                  "assigneeUserId": "user-bob"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+
+        mockMvc.perform(patch("/api/tasks/" + memberTaskId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Owner Moves Task",
+                                  "description": "Owned by member with completion notes",
                                   "status": "DONE",
                                   "assigneeUserId": "user-bob"
                                 }
                                 """))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DONE"));
 
         mockMvc.perform(patch("/api/tasks/" + taskId)
                         .header("Authorization", "Bearer " + memberToken)

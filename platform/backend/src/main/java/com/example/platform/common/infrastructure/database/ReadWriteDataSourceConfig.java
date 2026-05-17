@@ -1,6 +1,7 @@
 package com.example.platform.common.infrastructure.database;
 
 import com.zaxxer.hikari.HikariDataSource;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.HashMap;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -24,13 +25,17 @@ public class ReadWriteDataSourceConfig {
 
     @Bean
     @Primary
-    public DataSource dataSource() {
+    public DataSource dataSource(MeterRegistry meterRegistry) {
         DataSourceProperties defaultProperties = bindOrDefault("spring.datasource");
         DataSourceProperties masterProperties = bindOrDefault("spring.datasource.master");
         DataSourceProperties replicaProperties = bindOrDefault("spring.datasource.replica");
 
         HikariDataSource writeDataSource = buildDataSource(masterProperties, defaultProperties, "spring.datasource.master.hikari");
         HikariDataSource readDataSource = buildReadDataSource(replicaProperties, writeDataSource);
+        bindHikariMetrics(writeDataSource, "platform-write", meterRegistry);
+        if (readDataSource != writeDataSource) {
+            bindHikariMetrics(readDataSource, "platform-read", meterRegistry);
+        }
 
         TransactionRoutingDataSource routingDataSource = new TransactionRoutingDataSource();
         Map<Object, Object> targets = new HashMap<>();
@@ -73,5 +78,12 @@ public class ReadWriteDataSourceConfig {
         Binder.get(environment).bind("spring.datasource.replica.hikari", Bindable.ofInstance(readDataSource));
         readDataSource.setReadOnly(true);
         return readDataSource;
+    }
+
+    private void bindHikariMetrics(HikariDataSource dataSource, String fallbackPoolName, MeterRegistry meterRegistry) {
+        if (!StringUtils.hasText(dataSource.getPoolName())) {
+            dataSource.setPoolName(fallbackPoolName);
+        }
+        dataSource.setMetricRegistry(meterRegistry);
     }
 }

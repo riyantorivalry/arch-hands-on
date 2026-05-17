@@ -1,5 +1,7 @@
 package com.example.platform.common.infrastructure.observability;
 
+import com.example.platform.common.web.AuthenticationRequiredException;
+import com.example.platform.common.web.AuthorizationDeniedException;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -45,8 +47,13 @@ public class ObservabilityAspect {
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - startTime;
             MDC.put(executionTime, String.valueOf(duration));
-            logger.error("Method exception: {} - duration: {}ms - error: {}",
-                    methodName, duration, e.getMessage(), e);
+            if (e instanceof AuthenticationRequiredException || e instanceof AuthorizationDeniedException) {
+                logger.warn("Method denied: {} - duration: {}ms - error: {}",
+                        methodName, duration, e.getMessage());
+            } else {
+                logger.error("Method exception: {} - duration: {}ms - error: {}",
+                        methodName, duration, e.getMessage(), e);
+            }
             throw e;
         } finally {
             if (previousMethod != null) {

@@ -7,6 +7,9 @@
                     source="logging.file.name"
                     defaultValue="${LOG_FILE:-${LOG_PATH:-${LOG_TEMP:-${java.io.tmpdir:-/tmp}}/}spring.log}"/>
     <springProperty scope="context" name="LOG_LEVEL" source="logging.level.root" defaultValue="INFO"/>
+    <springProperty scope="context" name="APP_LOG_LEVEL" source="logging.level.com.example.platform" defaultValue="INFO"/>
+    <springProperty scope="context" name="OBSERVABILITY_LOG_LEVEL" source="logging.level.com.example.platform.common.infrastructure.observability" defaultValue="INFO"/>
+    <springProperty scope="context" name="HIBERNATE_SQL_LOG_LEVEL" source="logging.level.org.hibernate.SQL" defaultValue="WARN"/>
 
     <!-- Define log locations -->
     <property name="LOG_DIR" value="logs"/>
@@ -40,9 +43,6 @@
             </customFields>
             <includeContext>true</includeContext>
             <includeMdc>true</includeMdc>
-            <includeThreadName>true</includeThreadName>
-            <includeCallerInfo>false</includeCallerInfo>
-            <includeLevelName>true</includeLevelName>
         </encoder>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
             <fileNamePattern>${LOG_DIR}/${LOG_FILE_NAME}.json.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
@@ -82,8 +82,8 @@
     </appender>
 
     <!-- Application-specific loggers -->
-    <logger name="com.example.platform" level="DEBUG"/>
-    <logger name="com.example.platform.common.infrastructure.observability" level="DEBUG"/>
+    <logger name="com.example.platform" level="${APP_LOG_LEVEL}"/>
+    <logger name="com.example.platform.common.infrastructure.observability" level="${OBSERVABILITY_LOG_LEVEL}"/>
 
     <!-- Spring Framework loggers -->
     <logger name="org.springframework" level="INFO"/>
@@ -93,8 +93,8 @@
 
     <!-- Hibernate/JPA loggers -->
     <logger name="org.hibernate" level="INFO"/>
-    <logger name="org.hibernate.SQL" level="DEBUG"/>
-    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="DEBUG"/>
+    <logger name="org.hibernate.SQL" level="${HIBERNATE_SQL_LOG_LEVEL}"/>
+    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="WARN"/>
 
     <!-- Infrastructure loggers -->
     <logger name="org.postgresql" level="WARN"/>
@@ -105,7 +105,7 @@
         <root level="${LOG_LEVEL}">
             <appender-ref ref="CONSOLE"/>
             <appender-ref ref="ERROR_FILE"/>
-            <!-- Also write structured JSON logs in local/dev so promtail can collect them during development -->
+            <!-- Also write structured JSON logs in local/dev so Alloy can collect them during development -->
             <appender-ref ref="ASYNC_JSON"/>
         </root>
     </springProfile>

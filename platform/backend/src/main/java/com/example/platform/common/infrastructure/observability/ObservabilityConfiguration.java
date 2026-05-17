@@ -1,21 +1,25 @@
 package com.example.platform.common.infrastructure.observability;
 
+import com.example.platform.common.domain.OutboxEventRepository;
 import io.micrometer.core.aop.TimedAspect;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
-import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.binder.jvm.ClassLoaderMetrics;
 import io.micrometer.core.instrument.binder.jvm.JvmGcMetrics;
 import io.micrometer.core.instrument.binder.jvm.JvmMemoryMetrics;
 import io.micrometer.core.instrument.binder.jvm.JvmThreadMetrics;
 import io.micrometer.core.instrument.binder.system.ProcessorMetrics;
+import io.micrometer.core.instrument.config.MeterFilter;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
-import org.springframework.boot.actuate.health.Status;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.data.domain.AuditorAware;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 
 import java.util.Optional;
 
@@ -32,6 +36,14 @@ public class ObservabilityConfiguration {
     @Bean
     public TimedAspect timedAspect(MeterRegistry registry) {
         return new TimedAspect(registry);
+    }
+
+    /**
+     * Guard against unbounded tag growth from dynamic URI values.
+     */
+    @Bean
+    public MeterFilter httpServerRequestUriCardinalityLimit() {
+        return MeterFilter.maximumAllowableTags("http.server.requests", "uri", 100, MeterFilter.deny());
     }
 
     /**
@@ -54,8 +66,8 @@ public class ObservabilityConfiguration {
      * Custom health indicator for cache health.
      */
     @Bean
-    public HealthIndicator cacheHealthIndicator() {
-        return new CacheHealthIndicator();
+    public HealthIndicator cacheHealthIndicator(RedisConnectionFactory connectionFactory) {
+        return new CacheHealthIndicator(connectionFactory);
     }
 
     /**
@@ -70,6 +82,19 @@ public class ObservabilityConfiguration {
             new JvmThreadMetrics().bindTo(registry);
             new ProcessorMetrics().bindTo(registry);
         };
+    }
+
+    /**
+     * Expose outbox backlog so alerts can detect stalled event delivery.
+     */
+    @Bean
+    @ConditionalOnBean(OutboxEventRepository.class)
+    public MeterBinder outboxMetrics(OutboxEventRepository outboxEventRepository) {
+        return (registry) -> Gauge.builder("outbox.unpublished.events", outboxEventRepository,
+                        OutboxEventRepository::countUnpublishedEvents)
+                .description("Number of unpublished events waiting in the outbox")
+                .tag("component", "outbox")
+                .register(registry);
     }
 
     /**
@@ -135,17 +160,24 @@ public class ObservabilityConfiguration {
      * Health indicator for cache (Redis).
      */
     public static class CacheHealthIndicator implements HealthIndicator {
+        private final RedisConnectionFactory connectionFactory;
+
+        public CacheHealthIndicator(RedisConnectionFactory connectionFactory) {
+            this.connectionFactory = connectionFactory;
+        }
+
         @Override
         public Health health() {
-            try {
-                // Check cache connectivity
+            try (RedisConnection connection = connectionFactory.getConnection()) {
+                String response = connection.ping();
                 return Health.up()
                         .withDetail("cache", "redis")
-                        .withDetail("status", "connected")
+                        .withDetail("ping", response)
                         .build();
             } catch (Exception e) {
-                return Health.up()
-                        .withDetail("warning", "Cache may be unavailable")
+                return Health.down()
+                        .withDetail("cache", "redis")
+                        .withDetail("error", e.getMessage())
                         .build();
             }
         }

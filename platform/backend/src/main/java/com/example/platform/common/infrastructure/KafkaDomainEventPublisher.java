@@ -2,8 +2,9 @@ package com.example.platform.common.infrastructure;
 
 import com.example.platform.common.domain.DomainEvent;
 import com.example.platform.common.domain.DomainEventPublisher;
+import com.example.platform.common.infrastructure.observability.BusinessMetricsCollector;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.nio.charset.StandardCharsets;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,16 +39,19 @@ public class KafkaDomainEventPublisher implements DomainEventPublisher {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final BusinessMetricsCollector metricsCollector;
 
     @Value("${platform.event-publishing.kafka.enabled:false}")
     private boolean kafkaEnabled;
 
     public KafkaDomainEventPublisher(
             KafkaTemplate<String, String> kafkaTemplate,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            BusinessMetricsCollector metricsCollector
     ) {
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
+        this.metricsCollector = metricsCollector;
     }
 
     @Override
@@ -64,6 +68,7 @@ public class KafkaDomainEventPublisher implements DomainEventPublisher {
 
             // Determine topic based on event type
             String topic = getTopicForEvent(eventType);
+            Timer.Sample sample = metricsCollector.startEventPublishingTimer();
 
             // Create message with headers for filtering and tracing
             Message<String> message = MessageBuilder
@@ -78,21 +83,28 @@ public class KafkaDomainEventPublisher implements DomainEventPublisher {
             // Send asynchronously with callback
             kafkaTemplate.send(message)
                     .whenComplete((result, ex) -> {
-                        if (ex != null) {
-                            LOGGER.error("Failed to publish event to Kafka: {} on topic {}", eventType, topic, ex);
-                        } else {
-                            LOGGER.info(
-                                    "Event published: type={} id={} tenant={} partition={} offset={}",
-                                    eventType,
-                                    event.getEventId(),
-                                    tenantId,
-                                    result.getRecordMetadata().partition(),
-                                    result.getRecordMetadata().offset()
-                            );
+                        try {
+                            if (ex != null) {
+                                metricsCollector.recordEventFailed();
+                                LOGGER.error("Failed to publish event to Kafka: {} on topic {}", eventType, topic, ex);
+                            } else {
+                                metricsCollector.recordEventPublished();
+                                LOGGER.info(
+                                        "Event published: type={} id={} tenant={} partition={} offset={}",
+                                        eventType,
+                                        event.getEventId(),
+                                        tenantId,
+                                        result.getRecordMetadata().partition(),
+                                        result.getRecordMetadata().offset()
+                                );
+                            }
+                        } finally {
+                            metricsCollector.stopEventPublishingTimer(sample);
                         }
                     });
 
         } catch (Exception e) {
+            metricsCollector.recordEventFailed();
             LOGGER.error("Error serializing domain event: {}", event.getEventType(), e);
             throw new RuntimeException("Failed to publish event", e);
         }

@@ -2,5 +2,6 @@
 arch-hands-on.iml
 target/
 *.log
+.env
 node_modules/
 .next/

@@ -1,0 +1,51 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+loki.source.file "platform_json_logs" {
+  targets = [
+    {
+      __path__      = "/var/log/platform/*.json.log",
+      job           = "platform-backend-logs",
+      service_name  = "platform-backend",
+      environment   = "local",
+    },
+  ]
+
+  forward_to = [loki.process.platform_json.receiver]
+
+  file_match {
+    enabled     = true
+    sync_period = "10s"
+  }
+}
+
+loki.process "platform_json" {
+  stage.json {
+    drop_malformed = true
+    expressions = {
+      extracted_level          = "level",
+      extracted_logger         = "logger_name",
+      extracted_service        = "service",
+      extracted_trace_id       = "traceId",
+      extracted_correlation_id = "correlationId",
+      extracted_tenant_id      = "tenantId",
+    }
+  }
+
+  stage.labels {
+    values = {
+      level        = "extracted_level",
+      service_name = "extracted_service",
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -66,7 +66,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,loggers,threaddump,heapdump
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,metrics,prometheus}
       base-path: /actuator
       path-mapping:
         prometheus: prometheus
@@ -74,8 +74,8 @@ management:
     health:
       probes:
         enabled: true
-      show-details: when-authorized
-      show-components: when-authorized
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+      show-components: ${MANAGEMENT_HEALTH_SHOW_COMPONENTS:never}
       livenessState:
         enabled: true
       readinessState:
@@ -86,10 +86,13 @@ management:
       enabled: true
     loggers:
       enabled: true
-  metrics:
-    export:
-      prometheus:
+  prometheus:
+    metrics:
+      export:
         enabled: true
+        step: 15s
+        descriptions: true
+  metrics:
     distribution:
       percentiles-histogram:
         http.server.requests: true
@@ -103,10 +106,23 @@ management:
         http.server.requests: 50ms,100ms,200ms,500ms,1s
     tags:
       application: ${spring.application.name}
+      environment: ${PLATFORM_ENVIRONMENT:local}
       instance_id: ${HOSTNAME:localhost}
+    web:
+      server:
+        request:
+          autotime:
+            enabled: true
+    enable:
+      jvm: true
+      process: true
+      system: true
   tracing:
     sampling:
-      probability: 1.0
+      probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:0.10}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
 
 server:
   shutdown: graceful
@@ -122,11 +138,11 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [corr=%X{correlationId:-} req=%X{requestId:-} trace=%X{traceId:-} tenant=%X{tenantId:-} user=%X{userId:-}] %logger{36} - %msg%n"
   level:
     root: INFO
-    com.example.platform: DEBUG
-    com.example.platform.common.infrastructure.observability: DEBUG
+    com.example.platform: ${LOGGING_LEVEL_COM_EXAMPLE_PLATFORM:INFO}
+    com.example.platform.common.infrastructure.observability: ${LOGGING_LEVEL_OBSERVABILITY:INFO}
     org.springframework: INFO
     org.springframework.web: INFO
-    org.hibernate.SQL: DEBUG
+    org.hibernate.SQL: ${LOGGING_LEVEL_HIBERNATE_SQL:WARN}
   file:
     name: logs/platform-backend.log
     max-size: 100MB

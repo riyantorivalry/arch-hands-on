@@ -2,6 +2,8 @@ package com.example.platform.common.infrastructure;
 
 import com.example.platform.common.domain.DomainEvent;
 import com.example.platform.common.domain.DomainEventPublisher;
+import com.example.platform.common.infrastructure.observability.BusinessMetricsCollector;
+import io.micrometer.core.instrument.Timer;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,16 +34,30 @@ public class InProcessDomainEventPublisher implements DomainEventPublisher {
     private static final Logger LOGGER = LoggerFactory.getLogger(InProcessDomainEventPublisher.class);
 
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final BusinessMetricsCollector metricsCollector;
 
-    public InProcessDomainEventPublisher(ApplicationEventPublisher applicationEventPublisher) {
+    public InProcessDomainEventPublisher(
+            ApplicationEventPublisher applicationEventPublisher,
+            BusinessMetricsCollector metricsCollector
+    ) {
         this.applicationEventPublisher = applicationEventPublisher;
+        this.metricsCollector = metricsCollector;
     }
 
     @Override
     public void publish(DomainEvent event) {
         LOGGER.debug("Publishing domain event: type={}, eventId={}, aggregateId={}",
                 event.getEventType(), event.getEventId(), event.getAggregateId());
-        applicationEventPublisher.publishEvent(event);
+        Timer.Sample sample = metricsCollector.startEventPublishingTimer();
+        try {
+            applicationEventPublisher.publishEvent(event);
+            metricsCollector.recordEventPublished();
+        } catch (RuntimeException e) {
+            metricsCollector.recordEventFailed();
+            throw e;
+        } finally {
+            metricsCollector.stopEventPublishingTimer(sample);
+        }
     }
 
     @Override

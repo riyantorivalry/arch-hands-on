@@ -45,8 +45,8 @@
       "options": {},
       "targets": [
         {
-          "expr": "sum(rate(http_server_requests_seconds_count[5m])) by (uri)",
-          "legendFormat": "{uri}",
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"platform-backend\"}[5m])) by (uri)",
+          "legendFormat": "{{uri}}",
           "refId": "A"
         }
       ],
@@ -61,12 +61,12 @@
       "options": {},
       "targets": [
         {
-          "expr": "sum(rate(events_published_total[5m]))",
-          "legendFormat": "events published (r/s)",
+          "expr": "sum(increase(events_published_total{job=\"platform-backend\"}[$__rate_interval]))",
+          "legendFormat": "events published",
           "refId": "A"
         }
       ],
-      "title": "Events Published Rate",
+      "title": "Events Published",
       "type": "timeseries"
     }
   ],

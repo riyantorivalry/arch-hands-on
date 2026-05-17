@@ -4,8 +4,10 @@ import com.example.platform.common.domain.DomainEvent;
 import com.example.platform.common.domain.DomainEventPublisher;
 import com.example.platform.common.domain.OutboxEvent;
 import com.example.platform.common.domain.OutboxEventRepository;
+import com.example.platform.common.infrastructure.observability.BusinessMetricsCollector;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,18 +33,22 @@ public class OutboxDomainEventPublisher implements DomainEventPublisher {
 
     private final OutboxEventRepository outboxRepository;
     private final ObjectMapper objectMapper;
+    private final BusinessMetricsCollector metricsCollector;
 
     public OutboxDomainEventPublisher(
             OutboxEventRepository outboxRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            BusinessMetricsCollector metricsCollector
     ) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
+        this.metricsCollector = metricsCollector;
     }
 
     @Override
     @Transactional
     public void publish(DomainEvent event) {
+        Timer.Sample sample = metricsCollector.startEventPublishingTimer();
         try {
             // Check if event already exists (idempotency)
             if (outboxRepository.existsByEventId(event.getEventId())) {
@@ -68,13 +74,17 @@ public class OutboxDomainEventPublisher implements DomainEventPublisher {
 
             // Save to database (within transaction)
             outboxRepository.save(outboxEvent);
+            metricsCollector.recordEventPublished();
 
             LOGGER.info("Event stored in outbox: type={} id={} aggregate={}",
                        event.getEventType(), event.getEventId(), event.getAggregateId());
 
         } catch (Exception e) {
+            metricsCollector.recordEventFailed();
             LOGGER.error("Failed to store event in outbox: {}", event.getEventType(), e);
             throw new RuntimeException("Failed to store event in outbox", e);
+        } finally {
+            metricsCollector.stopEventPublishingTimer(sample);
         }
     }
 
