@@ -1,6 +1,8 @@
 package com.example.platform.analytics.application;
 
+import com.example.platform.analytics.domain.AnalyticsEventEntity;
 import com.example.platform.analytics.domain.AnalyticsEventDocument;
+import com.example.platform.analytics.infrastructure.AnalyticsEventRepository;
 import com.example.platform.analytics.infrastructure.AnalyticsEventMongoRepository;
 import com.example.platform.common.web.RequestContext;
 import com.example.platform.common.web.RequestContexts;
@@ -25,11 +27,17 @@ public class AnalyticsService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AnalyticsService.class);
 
-    private final AnalyticsEventMongoRepository repository;
+    private final AnalyticsEventRepository postgresRepository;
+    private final AnalyticsEventMongoRepository mongoRepository;
     private final ObjectMapper objectMapper;
 
-    public AnalyticsService(AnalyticsEventMongoRepository repository, ObjectMapper objectMapper) {
-        this.repository = repository;
+    public AnalyticsService(
+            AnalyticsEventRepository postgresRepository,
+            AnalyticsEventMongoRepository mongoRepository,
+            ObjectMapper objectMapper
+    ) {
+        this.postgresRepository = postgresRepository;
+        this.mongoRepository = mongoRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -41,7 +49,7 @@ public class AnalyticsService {
             String eventId = "analytics-" + UUID.randomUUID().toString();
             JsonNode serializedData = objectMapper.valueToTree(eventData);
 
-            AnalyticsEventDocument event = new AnalyticsEventDocument(
+            AnalyticsEventEntity postgresEvent = new AnalyticsEventEntity(
                     eventId,
                     context.tenantId(),
                     context.userId(),
@@ -55,8 +63,23 @@ public class AnalyticsService {
                     null, // userAgent - not available in current RequestContext
                     null  // ipAddress - not available in current RequestContext
             );
+            savePostgres(postgresEvent);
 
-            repository.save(event);
+            AnalyticsEventDocument mongoEvent = new AnalyticsEventDocument(
+                    eventId,
+                    context.tenantId(),
+                    context.userId(),
+                    context.workspaceId(),
+                    eventType,
+                    eventCategory,
+                    resourceType,
+                    resourceId,
+                    serializedData,
+                    null,
+                    null,
+                    null
+            );
+            saveMongo(mongoEvent);
             LOGGER.debug("Captured analytics event: {} for tenant: {}", eventType, context.tenantId());
 
         } catch (Exception e) {
@@ -64,18 +87,96 @@ public class AnalyticsService {
         }
     }
 
-    public List<com.example.platform.analytics.domain.AnalyticsEventDocument> getEventsForTenant(String tenantId, Instant start, Instant end) {
-        return repository.findByTenantIdAndCreatedAtBetweenOrderByCreatedAtDesc(tenantId, start, end);
+    @Transactional(readOnly = true)
+    public List<AnalyticsEventView> getPostgresJsonbEventsForTenant(String tenantId, Instant start, Instant end) {
+        return postgresRepository.findByTenantIdAndCreatedAtBetweenOrderByCreatedAtDesc(tenantId, start, end).stream()
+                .map(this::toView)
+                .toList();
     }
 
-    public long countEvents(String tenantId, String eventType, Instant start, Instant end) {
-        return repository.countByTenantIdAndEventTypeAndCreatedAtBetween(tenantId, eventType, start, end);
+    public List<AnalyticsEventView> getMongoEventsForTenant(String tenantId, Instant start, Instant end) {
+        return mongoRepository.findByTenantIdAndCreatedAtBetweenOrderByCreatedAtDesc(tenantId, start, end).stream()
+                .map(this::toView)
+                .toList();
     }
 
+    @Transactional(readOnly = true)
+    public long countPostgresJsonbEvents(String tenantId, String eventType, Instant start, Instant end) {
+        return postgresRepository.countByTenantIdAndEventTypeAndCreatedAtBetween(tenantId, eventType, start, end);
+    }
+
+    public long countMongoEvents(String tenantId, String eventType, Instant start, Instant end) {
+        return mongoRepository.countByTenantIdAndEventTypeAndCreatedAtBetween(tenantId, eventType, start, end);
+    }
+
+    @Transactional(readOnly = true)
     public List<String> getEventTypesForTenant(String tenantId) {
-        // Mongo repository returns documents with event_type field; extract distinct types
-        var docs = repository.findDistinctEventTypesByTenantId(tenantId);
+        return postgresRepository.findDistinctEventTypesByTenantId(tenantId);
+    }
+
+    public List<String> getMongoEventTypesForTenant(String tenantId) {
+        var docs = mongoRepository.findDistinctEventTypesByTenantId(tenantId);
         return docs.stream().map(d -> d.getEventType()).distinct().sorted().toList();
+    }
+
+    private void savePostgres(AnalyticsEventEntity event) {
+        try {
+            postgresRepository.save(event);
+        } catch (Exception exception) {
+            LOGGER.warn("Failed to persist analytics event to Postgres JSONB: {}", event.getEventId(), exception);
+        }
+    }
+
+    private void saveMongo(AnalyticsEventDocument event) {
+        try {
+            mongoRepository.save(event);
+        } catch (Exception exception) {
+            LOGGER.warn("Failed to persist analytics event to MongoDB: {}", event.getEventId(), exception);
+        }
+    }
+
+    private AnalyticsEventView toView(AnalyticsEventEntity event) {
+        return new AnalyticsEventView(
+                event.getEventId(),
+                event.getTenantId(),
+                event.getUserId(),
+                event.getWorkspaceId(),
+                event.getEventType(),
+                event.getEventCategory(),
+                event.getResourceType(),
+                event.getResourceId(),
+                event.getEventData(),
+                event.getCreatedAt()
+        );
+    }
+
+    private AnalyticsEventView toView(AnalyticsEventDocument event) {
+        return new AnalyticsEventView(
+                event.getEventId(),
+                event.getTenantId(),
+                event.getUserId(),
+                event.getWorkspaceId(),
+                event.getEventType(),
+                event.getEventCategory(),
+                event.getResourceType(),
+                event.getResourceId(),
+                event.getEventData(),
+                event.getCreatedAt()
+        );
+    }
+
+    public record AnalyticsEventView(
+            String eventId,
+            String tenantId,
+            String userId,
+            String workspaceId,
+            String eventType,
+            String eventCategory,
+            String resourceType,
+            String resourceId,
+            JsonNode eventData,
+            Instant createdAt
+    ) {
     }
 
     // Convenience methods for common events

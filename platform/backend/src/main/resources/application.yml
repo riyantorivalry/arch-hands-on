@@ -26,6 +26,8 @@ spring:
         format_sql: true
   jackson:
     default-property-inclusion: non_null
+  flyway:
+    locations: classpath:db/migration,classpath:db/vendor/{vendor}
   data:
     redis:
       host: localhost
@@ -131,6 +133,15 @@ server:
   shutdown: graceful
 
 platform:
+  feature:
+    cache:
+      mode: ${PLATFORM_FEATURE_CACHE_MODE:caffeine}
+      caffeine:
+        maximum-size: ${PLATFORM_FEATURE_CACHE_CAFFEINE_MAXIMUM_SIZE:10000}
+      memcached:
+        host: ${PLATFORM_FEATURE_CACHE_MEMCACHED_HOST:localhost}
+        port: ${PLATFORM_FEATURE_CACHE_MEMCACHED_PORT:11211}
+        timeout-ms: ${PLATFORM_FEATURE_CACHE_MEMCACHED_TIMEOUT_MS:1000}
   event-publishing:
     mode: outbox
     kafka:

@@ -12,7 +12,9 @@ tags:
   - name: Messaging
   - name: Documents
   - name: Tasks
+  - name: Analytics
   - name: Realtime
+  - name: Cache
   - name: Platform
   - name: GraphQL
 security:
@@ -129,6 +131,130 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/tenants/{tenantId}/analytics/events:
+    get:
+      tags:
+        - Analytics
+      summary: List tenant analytics events from PostgreSQL JSONB.
+      description: Baseline analytics storage comparison endpoint backed by the `analytics_events.event_data` JSON column in PostgreSQL.
+      operationId: listPostgresJsonbAnalyticsEventsV1
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/StartInstant"
+        - $ref: "#/components/parameters/EndInstant"
+      responses:
+        "200":
+          description: Analytics events stored in PostgreSQL JSONB.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalyticsEventView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/tenants/{tenantId}/analytics/events:
+    get:
+      tags:
+        - Analytics
+      summary: List tenant analytics events from MongoDB.
+      description: Document-store analytics comparison endpoint backed by the MongoDB `analytics_events` collection.
+      operationId: listMongoAnalyticsEventsV2
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/StartInstant"
+        - $ref: "#/components/parameters/EndInstant"
+      responses:
+        "200":
+          description: Analytics events stored in MongoDB.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalyticsEventView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/workspaces/{workspaceId}/authorization/decisions:
+    post:
+      tags:
+        - Identity Access
+      summary: Evaluate an authorization decision using RBAC.
+      description: Authorization comparison baseline using workspace roles only: OWNER, ADMIN, and MEMBER.
+      operationId: decideAuthorizationRbacV1
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorizationDecisionRequest"
+      responses:
+        "200":
+          description: RBAC authorization decision.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationDecision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v2/workspaces/{workspaceId}/authorization/decisions:
+    post:
+      tags:
+        - Identity Access
+      summary: Evaluate an authorization decision using ABAC/OPA-style policy rules.
+      description: Attribute-aware authorization comparison endpoint. This local evaluator follows an OPA-style input/decision shape without requiring an external OPA runtime.
+      operationId: decideAuthorizationAbacOpaV2
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorizationDecisionRequest"
+      responses:
+        "200":
+          description: ABAC/OPA-style authorization decision.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationDecision"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v1/workspaces/{workspaceId}/events:
     get:
       tags:
@@ -191,6 +317,138 @@ paths:
       responses:
         "101":
           description: WebSocket protocol upgrade.
+
+  /api/benchmarks/cache/strategy:
+    get:
+      tags:
+        - Cache
+      summary: Get the cache strategy selected for stable runtime usage.
+      description: Reports the `platform.feature.cache.mode` value used by the shared application cache facade.
+      operationId: getSelectedCacheStrategy
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Selected cache strategy.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheStrategyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/benchmarks/cache/{strategy}/entries:
+    post:
+      tags:
+        - Cache
+      summary: Write a cache entry using a specific cache strategy.
+      description: Benchmark endpoint for direct Redis, Caffeine, or Memcached comparison without changing the stable cache facade.
+      operationId: setCacheEntryForStrategy
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/CacheStrategy"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CacheSetRequest"
+      responses:
+        "200":
+          description: Stored cache entry observation.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheEntryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/benchmarks/cache/{strategy}/entries/{key}:
+    get:
+      tags:
+        - Cache
+      summary: Read a cache entry using a specific cache strategy.
+      operationId: getCacheEntryForStrategy
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/CacheStrategy"
+        - $ref: "#/components/parameters/CacheKey"
+      responses:
+        "200":
+          description: Cache entry observation.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheEntryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags:
+        - Cache
+      summary: Delete a cache entry using a specific cache strategy.
+      operationId: deleteCacheEntryForStrategy
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/CacheStrategy"
+        - $ref: "#/components/parameters/CacheKey"
+      responses:
+        "200":
+          description: Cache entry deletion observation.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheEntryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/benchmarks/cache/{strategy}/counters/{key}/increment:
+    post:
+      tags:
+        - Cache
+      summary: Increment a cache counter using a specific cache strategy.
+      operationId: incrementCacheCounterForStrategy
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/CacheStrategy"
+        - $ref: "#/components/parameters/CacheKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CacheIncrementRequest"
+      responses:
+        "200":
+          description: Cache counter observation.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheCounterResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/auth/login:
     post:
@@ -882,6 +1140,40 @@ components:
         default: 0
         minimum: 0
       description: Last observed realtime event version. Events with greater versions are returned.
+    StartInstant:
+      name: start
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date-time
+      description: Inclusive analytics window start. Defaults to 30 days before `end`.
+    EndInstant:
+      name: end
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date-time
+      description: Inclusive analytics window end. Defaults to the current server time.
+    CacheStrategy:
+      name: strategy
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+          - redis
+          - caffeine
+          - memcached
+      description: Cache implementation to invoke directly for benchmark comparison.
+    CacheKey:
+      name: key
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Cache key. Memcached requires keys to be 250 characters or fewer with no whitespace.
 
   headers:
     CorrelationId:
@@ -1398,6 +1690,243 @@ components:
         payload:
           type: object
           additionalProperties: true
+
+    AnalyticsEventView:
+      type: object
+      required:
+        - eventId
+        - tenantId
+        - eventType
+        - eventCategory
+        - eventData
+        - createdAt
+      properties:
+        eventId:
+          type: string
+        tenantId:
+          type: string
+        userId:
+          type:
+            - string
+            - "null"
+        workspaceId:
+          type:
+            - string
+            - "null"
+        eventType:
+          type: string
+          example: search
+        eventCategory:
+          type: string
+          example: engagement
+        resourceType:
+          type:
+            - string
+            - "null"
+        resourceId:
+          type:
+            - string
+            - "null"
+        eventData:
+          type: object
+          additionalProperties: true
+          example:
+            query: architecture
+            resultCount: 3
+        createdAt:
+          type: string
+          format: date-time
+
+    AuthorizationDecisionRequest:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          example: document:update
+        resourceType:
+          type:
+            - string
+            - "null"
+          example: document
+        resourceId:
+          type:
+            - string
+            - "null"
+        resourceTenantId:
+          type:
+            - string
+            - "null"
+        resourceOwnerUserId:
+          type:
+            - string
+            - "null"
+        assigneeUserId:
+          type:
+            - string
+            - "null"
+        attributes:
+          type:
+            - object
+            - "null"
+          additionalProperties: true
+          example:
+            status: DRAFT
+            riskLevel: LOW
+
+    AuthorizationDecision:
+      type: object
+      required:
+        - strategyVersion
+        - strategy
+        - policyId
+        - allowed
+        - reason
+        - actorUserId
+        - tenantId
+        - workspaceId
+        - role
+        - action
+        - matchedRules
+        - evaluatedAt
+      properties:
+        strategyVersion:
+          type: string
+          example: v2
+        strategy:
+          type: string
+          enum:
+            - rbac
+            - abac-opa
+        policyId:
+          type: string
+        allowed:
+          type: boolean
+        reason:
+          type: string
+        actorUserId:
+          type: string
+        tenantId:
+          type: string
+        workspaceId:
+          type: string
+        role:
+          $ref: "#/components/schemas/MembershipRole"
+        action:
+          type: string
+        resourceType:
+          type:
+            - string
+            - "null"
+        resourceId:
+          type:
+            - string
+            - "null"
+        matchedRules:
+          type: array
+          items:
+            type: string
+        evaluatedAt:
+          type: string
+          format: date-time
+
+    CacheStrategyResponse:
+      type: object
+      required:
+        - selectedStrategy
+      properties:
+        selectedStrategy:
+          type: string
+          enum:
+            - redis
+            - caffeine
+            - memcached
+
+    CacheSetRequest:
+      type: object
+      required:
+        - key
+      properties:
+        key:
+          type: string
+          minLength: 1
+        value:
+          description: JSON value to cache.
+        ttlSeconds:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
+
+    CacheIncrementRequest:
+      type: object
+      properties:
+        ttlSeconds:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
+          default: 60
+
+    CacheEntryResponse:
+      type: object
+      required:
+        - strategy
+        - key
+        - hit
+        - ttlSeconds
+        - observedAt
+      properties:
+        strategy:
+          type: string
+          enum:
+            - redis
+            - caffeine
+            - memcached
+        key:
+          type: string
+        hit:
+          type: boolean
+        value:
+          description: Cached JSON value when `hit` is true.
+        ttlSeconds:
+          type: integer
+          format: int64
+          description: Remaining TTL in seconds, or -1 when the backend does not expose TTL.
+        observedAt:
+          type: string
+          format: date-time
+
+    CacheCounterResponse:
+      type: object
+      required:
+        - strategy
+        - key
+        - value
+        - ttlSeconds
+        - observedAt
+      properties:
+        strategy:
+          type: string
+          enum:
+            - redis
+            - caffeine
+            - memcached
+        key:
+          type: string
+        value:
+          type: integer
+          format: int64
+        ttlSeconds:
+          type: integer
+          format: int64
+          description: Remaining TTL in seconds, or -1 when the backend does not expose TTL.
+        observedAt:
+          type: string
+          format: date-time
 
     PlatformInfoResponse:
       type: object

@@ -103,6 +103,64 @@ SPRING_DATA_MONGODB_AUTHENTICATION_DATABASE=admin
 
 Override those variables when using a different MongoDB instance.
 
+## Analytics Storage Comparison
+
+Analytics events are exposed through versioned comparison endpoints:
+
+```text
+GET /api/v1/tenants/{tenantId}/analytics/events
+GET /api/v2/tenants/{tenantId}/analytics/events
+```
+
+`/api/v1` reads from PostgreSQL using the `analytics_events.event_data` JSON column. In PostgreSQL this architecture target is JSONB: JSON stored in a binary form that can be indexed and queried efficiently while staying in the primary relational database.
+
+`/api/v2` reads from MongoDB using the `analytics_events` collection. This compares a dedicated document store against the simpler Postgres JSONB baseline.
+
+The capture path currently writes to Postgres first and attempts MongoDB as a secondary analytics sink, so normal product workflows still work when MongoDB is unavailable locally.
+
+## Authorization Comparison
+
+Authorization decisions are exposed through versioned comparison endpoints:
+
+```text
+POST /api/v1/workspaces/{workspaceId}/authorization/decisions
+POST /api/v2/workspaces/{workspaceId}/authorization/decisions
+```
+
+`/api/v1` is RBAC: decisions are based on the actor's workspace role (`OWNER`, `ADMIN`, `MEMBER`).
+
+`/api/v2` is ABAC/OPA-style: decisions also consider request/resource attributes such as `resourceOwnerUserId`, `assigneeUserId`, `resourceTenantId`, status, and `riskLevel`. It is implemented as a local OPA-compatible policy shape for comparison, not as an external OPA sidecar yet.
+
+## Cache Strategy Comparison
+
+Runtime cache access goes through one shared cache facade. Select the implementation with:
+
+```text
+PLATFORM_FEATURE_CACHE_MODE=caffeine
+PLATFORM_FEATURE_CACHE_MODE=redis
+PLATFORM_FEATURE_CACHE_MODE=memcached
+```
+
+Default local/test mode is `caffeine`, which needs no external infrastructure. `redis` uses the existing Spring `RedisTemplate` configuration. `memcached` uses a Memcached server configured by:
+
+```text
+PLATFORM_FEATURE_CACHE_MEMCACHED_HOST=localhost
+PLATFORM_FEATURE_CACHE_MEMCACHED_PORT=11211
+PLATFORM_FEATURE_CACHE_MEMCACHED_TIMEOUT_MS=1000
+```
+
+Direct comparison endpoints are available for authenticated benchmark calls:
+
+```text
+GET    /api/benchmarks/cache/strategy
+POST   /api/benchmarks/cache/{strategy}/entries
+GET    /api/benchmarks/cache/{strategy}/entries/{key}
+POST   /api/benchmarks/cache/{strategy}/counters/{key}/increment
+DELETE /api/benchmarks/cache/{strategy}/entries/{key}
+```
+
+Allowed `{strategy}` values are `caffeine`, `redis`, and `memcached`. Normal application code should keep using the shared cache facade so rate limiting and future cache-backed flows can be switched by configuration.
+
 ## Observability
 
 Complete observability infrastructure is included:
