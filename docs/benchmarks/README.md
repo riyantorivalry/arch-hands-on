@@ -6,9 +6,12 @@ Store benchmark plans, scripts, raw outputs, and summary reports here.
 
 See [BENCHMARK_TEMPLATE.md](./BENCHMARK_TEMPLATE.md) for the full report structure and guidelines.
 
+Runnable k6 scripts live in [k6/](./k6/). Use [k6/comparison-endpoints.js](./k6/comparison-endpoints.js) for architecture comparison endpoints and [k6/collaboration-apis.js](./k6/collaboration-apis.js) for normal collaboration API workflows.
+
 ## Current comparison areas
 
 - Realtime delivery: polling vs SSE vs WebSocket
+- Document search: PostgreSQL ILIKE vs PostgreSQL FTS/pg_trgm vs OpenSearch fallback behavior
 - Analytics storage: PostgreSQL JSON/JSONB-style storage vs MongoDB
 - Authorization model: RBAC vs ABAC/OPA-style local evaluation
 - Authorization policy engine: in-code vs OPA-style local vs Casbin-style local vs database-backed rules

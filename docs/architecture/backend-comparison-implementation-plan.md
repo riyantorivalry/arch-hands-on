@@ -9,6 +9,7 @@
 As of 2026-05-18, the mainline backend implements these comparison tracks:
 
 - Realtime delivery: polling (`/api/v1`), SSE (`/api/v2`), and WebSocket (`/ws/v3/realtime`)
+- Document search: PostgreSQL `ILIKE` (`/api/v1`), PostgreSQL FTS + `pg_trgm` (`/api/v2`), and OpenSearch with PostgreSQL fallback (`/api/v3`)
 - Analytics storage: PostgreSQL JSON/JSONB-style relational storage (`/api/v1`) and MongoDB (`/api/v2`)
 - Authorization model: RBAC (`/api/v1`) and ABAC/OPA-style local evaluation (`/api/v2`)
 - Authorization policy engine: `in-code`, `opa-local`, `casbin-local`, and seeded database policy rules (`db-policy`)
@@ -21,7 +22,7 @@ Still planned or branch-scoped:
 - ClickHouse analytics
 - external OPA or Casbin runtime integration
 - Kafka/NATS event backbone
-- document search versioning
+- search service extraction
 - gRPC service-interface and tenant-per-schema topology experiments
 
 ## 1. Objective
@@ -60,6 +61,7 @@ The current backend is a Spring Boot modular monolith with these implemented or 
 - Caffeine and Memcached cache strategies
 - WebSocket realtime endpoint
 - OpenSearch document search path with PostgreSQL fallback
+- versioned document search comparison path
 - MongoDB analytics comparison path
 - authorization policy engine comparison path
 - rate limiting algorithm comparison path
@@ -379,7 +381,7 @@ Both can coexist:
 
 ## 6.1 Document Search
 
-This remains a planned comparison track. The project already has documents and an OpenSearch path with PostgreSQL fallback, but the versioned search comparison endpoints are not part of the current mainline behavior yet.
+This is implemented on the mainline backend as a versioned comparison track.
 
 ### v1: PostgreSQL ILIKE
 
@@ -983,7 +985,7 @@ Comparison metrics:
 - Add benchmark reports for each implemented comparison track.
 - Add ADRs for API versioning, feature-toggle comparison, realtime delivery, analytics storage, cache strategy, rate limiting, and authorization policy engines.
 - Add operational runbooks for Redis/Memcached degradation, realtime connection storms, authorization policy rollback, and rate limit rollback.
-- Add document search versioning if search comparison remains a target.
+- Improve document search benchmark datasets and capture comparison reports.
 - Add ClickHouse only when high-volume analytical query benchmarks are ready.
 
 ### Branch-Scoped Experiments
@@ -1078,7 +1080,7 @@ Do not:
 1. Create ADRs for the implemented comparison strategy: API versioning, feature toggles, realtime delivery, analytics storage, cache strategy, rate limiting, and authorization policy engines.
 2. Add benchmark reports for realtime, analytics storage, cache strategy, rate limiting, and authorization policy engine tracks.
 3. Add runbooks for Redis/Memcached degradation, realtime connection storms, authorization policy rollback, and rate limit rollback.
-4. Add k6 or Gatling scripts that exercise the existing benchmark endpoints.
+4. Extend the k6 comparison script with deeper workload mixes and persist benchmark reports for each run.
 5. Decide whether document search remains the next mainline comparison or should move to a branch/service-extraction experiment.
 6. Document known local infrastructure requirements for MongoDB, Redis, Memcached, and PostgreSQL replicas.
 

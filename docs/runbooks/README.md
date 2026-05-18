@@ -5,6 +5,7 @@ Operational procedures live here.
 ## Planned runbooks
 
 - [PostgreSQL primary-replica setup](./postgres-read-replica.md)
+- [k6 benchmark runs](./k6-benchmark-runs.md)
 - local environment bootstrap
 - PostgreSQL outage response
 - Redis degradation response

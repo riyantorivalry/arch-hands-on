@@ -940,6 +940,99 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/workspaces/{workspaceId}/documents/search:
+    get:
+      tags:
+        - Documents
+      summary: Search workspace documents using PostgreSQL ILIKE.
+      description: Document search comparison baseline backed by PostgreSQL `ILIKE`.
+      operationId: searchDocumentsPostgresIlikeV1
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search text matched against document title and content.
+      responses:
+        "200":
+          description: Search results.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v2/workspaces/{workspaceId}/documents/search:
+    get:
+      tags:
+        - Documents
+      summary: Search workspace documents using PostgreSQL FTS and pg_trgm.
+      description: Document search comparison endpoint backed by PostgreSQL full-text search and trigram similarity, with ILIKE fallback when unavailable.
+      operationId: searchDocumentsPostgresFullTextV2
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search text matched against document title and content.
+      responses:
+        "200":
+          description: Search results.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v3/workspaces/{workspaceId}/documents/search:
+    get:
+      tags:
+        - Documents
+      summary: Search workspace documents using OpenSearch.
+      description: Document search comparison endpoint backed by OpenSearch, with PostgreSQL ILIKE fallback when OpenSearch is unavailable or returns no hits.
+      operationId: searchDocumentsOpenSearchV3
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search text matched against document title and content.
+      responses:
+        "200":
+          description: Search results.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/documents/{documentId}:
     get:
       tags:
