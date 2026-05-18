@@ -1,9 +1,9 @@
-Observability stack (Prometheus + Grafana + Loki + Alloy + Tempo + OpenTelemetry Collector + Alertmanager + PostgreSQL exporter)
+Observability stack (Prometheus + Grafana + Loki + Alloy + Tempo + Pyroscope + OpenTelemetry Collector + Alertmanager + PostgreSQL exporter)
 
 This folder contains a self-contained observability stack you can run locally to collect metrics, logs and traces from the backend. It is still a single-node development stack, but the defaults now mirror production concerns: pinned images, explicit retention, no default `admin/admin` Grafana password, OTLP trace export, log collection with supported Grafana Alloy, and alert routing through Alertmanager.
 
 Contents
-- `docker-compose.yml` - launches Prometheus, Grafana, Loki, Alloy, Tempo, the OpenTelemetry Collector, Alertmanager, PostgreSQL exporters, and supporting local tools
+- `docker-compose.yml` - launches Prometheus, Grafana, Loki, Alloy, Tempo, Pyroscope, the OpenTelemetry Collector, Alertmanager, PostgreSQL exporters, and supporting local tools
 - `.env.example` - required runtime settings and pinned image versions
 - OpenSearch and OpenSearch Dashboards for document/log search
 - `prometheus/prometheus.yml` - Prometheus scrape configuration
@@ -14,6 +14,7 @@ Contents
 - `loki/config.yaml` - Loki single-node config with filesystem storage and retention
 - `otel/collector-config.yaml` - OTLP receiver and trace exporter to Tempo
 - `tempo/tempo.yaml` - Tempo single-node trace store
+- Pyroscope - single-node profile store for flamegraphs and continuous profiling
 
 Important notes
 - The compose file expects the backend to be accessible from the containers as `host.docker.internal:8080` (Windows/Mac). If using Linux, change `prometheus.yml` target to `host.docker.internal` alternative or `172.17.0.1:8080` as appropriate.
@@ -36,6 +37,7 @@ Open the following UIs:
 - Prometheus: http://localhost:9090
 - Loki (API): http://localhost:3100
 - Tempo (API): http://localhost:3200
+- Pyroscope: http://localhost:4040
 - Alertmanager: http://localhost:9093
 - Alloy: http://localhost:12345
 - PostgreSQL exporter primary: http://localhost:9187/metrics
@@ -45,16 +47,37 @@ Open the following UIs:
 Verify:
 - Prometheus should have `platform-backend` under Status -> Targets
 - Prometheus should have `postgres-primary` and `postgres-replica` under Status -> Targets after Postgres is running
-- Grafana should auto-provision the Prometheus, Loki, and Tempo datasources and import the dashboards `Platform Backend - Observability` and `Platform PostgreSQL - Connections`
+- Grafana should auto-provision the Prometheus, Loki, Tempo, and Pyroscope datasources and import the dashboards `Platform Backend - Observability` and `Platform PostgreSQL - Connections`
 - Alloy should be pushing JSON logs into Loki; in Grafana Explore you can query Loki with `{job="platform-backend-logs"}`
 - Spring Boot traces should flow to Tempo when the backend runs with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces`
+- JDBC timings should appear in Prometheus as `database_query_time_seconds_*` after API requests hit PostgreSQL
+- Flamegraphs should appear in Pyroscope/Grafana after starting the backend with profiling enabled
 - Alertmanager should receive active Prometheus alerts from `prometheus/rules/alert_rules.yml`
+
+Backend runtime settings for full local observability:
+
+```powershell
+$env:MANAGEMENT_TRACING_SAMPLING_PROBABILITY="1.0"
+$env:OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="http://localhost:4318/v1/traces"
+$env:PYROSCOPE_AGENT_ENABLED="true"
+$env:PYROSCOPE_SERVER_ADDRESS="http://localhost:4040"
+$env:PYROSCOPE_APPLICATION_NAME="platform-backend"
+```
+
+Then run the IntelliJ `RUN` application configuration, or use the equivalent Maven command from `platform/backend`:
+
+```powershell
+mvn spring-boot:run "-Dspring-boot.run.jvmArguments=-Dspring.profiles.active="
+```
+
+The Pyroscope Java profiler depends on native async-profiler support. If it cannot start on the host OS, the backend logs a warning and continues running; use WSL/Linux or a Linux container for reliable local flamegraphs.
 
 Troubleshooting
 - If metrics don't show, ensure backend is reachable from the container. On Windows/Mac `host.docker.internal` works; on Linux you may need to use the host's IP.
 - If PostgreSQL metrics don't show, ensure the main `compose.yaml` Postgres services are running and the exporter URIs in `.env` point at reachable host/port pairs.
 - If logs aren't ingested, ensure `platform/backend/logs/*.json.log` exist and are mounted.
 - If traces don't appear, confirm `management.otlp.tracing.endpoint` resolves to the collector and tracing sampling is non-zero.
+- If profile data does not appear, confirm Pyroscope is running, `PYROSCOPE_AGENT_ENABLED=true` is set for the backend process, and the Java profiler supports the current host OS.
 - To re-create the stack:
 
 ```powershell

@@ -1,10 +1,12 @@
 package com.example.platform.common.infrastructure.database;
 
 import com.zaxxer.hikari.HikariDataSource;
+import com.example.platform.common.infrastructure.observability.DatabaseQueryMetricsListener;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.HashMap;
 import java.util.Map;
 import javax.sql.DataSource;
+import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -29,6 +31,13 @@ public class ReadWriteDataSourceConfig {
         DataSourceProperties defaultProperties = bindOrDefault("spring.datasource");
         DataSourceProperties masterProperties = bindOrDefault("spring.datasource.master");
         DataSourceProperties replicaProperties = bindOrDefault("spring.datasource.replica");
+        long slowQueryThresholdMs = environment.getProperty(
+                "platform.observability.db.slow-query-threshold-ms",
+                Long.class,
+                250L
+        );
+        DatabaseQueryMetricsListener queryMetricsListener =
+                new DatabaseQueryMetricsListener(meterRegistry, slowQueryThresholdMs);
 
         HikariDataSource writeDataSource = buildDataSource(masterProperties, defaultProperties, "spring.datasource.master.hikari");
         HikariDataSource readDataSource = buildReadDataSource(replicaProperties, writeDataSource);
@@ -36,14 +45,18 @@ public class ReadWriteDataSourceConfig {
         if (readDataSource != writeDataSource) {
             bindHikariMetrics(readDataSource, "platform-read", meterRegistry);
         }
+        DataSource observedWriteDataSource = observeDataSource(writeDataSource, "platform-write", queryMetricsListener);
+        DataSource observedReadDataSource = readDataSource == writeDataSource
+                ? observedWriteDataSource
+                : observeDataSource(readDataSource, "platform-read", queryMetricsListener);
 
         TransactionRoutingDataSource routingDataSource = new TransactionRoutingDataSource();
         Map<Object, Object> targets = new HashMap<>();
-        targets.put(TransactionRoutingDataSource.WRITE, writeDataSource);
-        targets.put(TransactionRoutingDataSource.READ, readDataSource);
+        targets.put(TransactionRoutingDataSource.WRITE, observedWriteDataSource);
+        targets.put(TransactionRoutingDataSource.READ, observedReadDataSource);
 
         routingDataSource.setTargetDataSources(targets);
-        routingDataSource.setDefaultTargetDataSource(writeDataSource);
+        routingDataSource.setDefaultTargetDataSource(observedWriteDataSource);
         routingDataSource.afterPropertiesSet();
         return routingDataSource;
     }
@@ -85,5 +98,16 @@ public class ReadWriteDataSourceConfig {
             dataSource.setPoolName(fallbackPoolName);
         }
         dataSource.setMetricRegistry(meterRegistry);
+    }
+
+    private DataSource observeDataSource(
+            DataSource dataSource,
+            String datasourceName,
+            DatabaseQueryMetricsListener queryMetricsListener
+    ) {
+        return ProxyDataSourceBuilder.create(dataSource)
+                .name(datasourceName)
+                .listener(queryMetricsListener)
+                .build();
     }
 }

@@ -66,6 +66,7 @@ services:
       - prometheus
       - loki
       - tempo
+      - pyroscope
     restart: unless-stopped
 
   loki:
@@ -137,6 +138,17 @@ services:
       - tempo-data:/var/tempo
     restart: unless-stopped
 
+  pyroscope:
+    image: ${PYROSCOPE_IMAGE:-grafana/pyroscope:2.0.1}
+    container_name: observability_pyroscope
+    command:
+      - server
+    ports:
+      - "4040:4040"
+    volumes:
+      - pyroscope-data:/var/lib/pyroscope
+    restart: unless-stopped
+
   opensearch:
     image: opensearchproject/opensearch:2.8.0
     container_name: observability_opensearch
@@ -177,6 +189,7 @@ volumes:
   alloy-data:
   alertmanager-data:
   tempo-data:
+  pyroscope-data:
   opensearch-data:
 
 

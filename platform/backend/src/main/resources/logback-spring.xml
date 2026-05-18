@@ -10,6 +10,7 @@
     <springProperty scope="context" name="APP_LOG_LEVEL" source="logging.level.com.example.platform" defaultValue="INFO"/>
     <springProperty scope="context" name="OBSERVABILITY_LOG_LEVEL" source="logging.level.com.example.platform.common.infrastructure.observability" defaultValue="INFO"/>
     <springProperty scope="context" name="HIBERNATE_SQL_LOG_LEVEL" source="logging.level.org.hibernate.SQL" defaultValue="WARN"/>
+    <springProperty scope="context" name="ENVIRONMENT" source="platform.observability.profiling.environment" defaultValue="local"/>
 
     <!-- Define log locations -->
     <property name="LOG_DIR" value="logs"/>
@@ -30,16 +31,16 @@
         <file>${LOG_DIR}/${LOG_FILE_NAME}.json.log</file>
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <fieldNames>
-                <timestamp>[timestamp]</timestamp>
-                <version>[version]</version>
-                <logger>[logger_name]</logger>
-                <thread>[thread_name]</thread>
-                <level>[level]</level>
-                <message>[message]</message>
-                <stackTrace>[stack_trace]</stackTrace>
+                <timestamp>timestamp</timestamp>
+                <version>version</version>
+                <logger>logger_name</logger>
+                <thread>thread_name</thread>
+                <level>level</level>
+                <message>message</message>
+                <stackTrace>stack_trace</stackTrace>
             </fieldNames>
             <customFields>
-                {"service": "platform-backend", "environment": "production"}
+                {"service": "platform-backend", "environment": "${ENVIRONMENT}"}
             </customFields>
             <includeContext>true</includeContext>
             <includeMdc>true</includeMdc>
@@ -118,9 +119,13 @@
         </root>
     </springProfile>
 
-    <!-- Default: Console -->
-    <root level="${LOG_LEVEL}">
-        <appender-ref ref="CONSOLE"/>
-    </root>
+    <!-- Default IntelliJ run profile: Console + Error file + JSON logs for Alloy -->
+    <springProfile name="default">
+        <root level="${LOG_LEVEL}">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ERROR_FILE"/>
+            <appender-ref ref="ASYNC_JSON"/>
+        </root>
+    </springProfile>
 </configuration>
 

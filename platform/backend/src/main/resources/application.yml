@@ -105,6 +105,7 @@ management:
         document.processing.time: true
         collaboration.latency: true
         event.publishing.time: true
+        business.database.query.time: true
         database.query.time: true
         api.response.time: true
       slo:
@@ -133,6 +134,17 @@ server:
   shutdown: graceful
 
 platform:
+  observability:
+    db:
+      slow-query-threshold-ms: ${PLATFORM_OBSERVABILITY_DB_SLOW_QUERY_THRESHOLD_MS:250}
+    profiling:
+      enabled: ${PYROSCOPE_AGENT_ENABLED:false}
+      application-name: ${PYROSCOPE_APPLICATION_NAME:${spring.application.name}}
+      server-address: ${PYROSCOPE_SERVER_ADDRESS:http://localhost:4040}
+      environment: ${PLATFORM_ENVIRONMENT:local}
+      region: ${PLATFORM_REGION:local}
+      alloc: ${PYROSCOPE_PROFILER_ALLOC:}
+      lock: ${PYROSCOPE_PROFILER_LOCK:10ms}
   feature:
     cache:
       mode: ${PLATFORM_FEATURE_CACHE_MODE:caffeine}

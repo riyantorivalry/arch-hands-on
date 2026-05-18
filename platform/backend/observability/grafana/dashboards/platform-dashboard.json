@@ -68,6 +68,43 @@
       ],
       "title": "Events Published",
       "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "id": 8,
+      "options": {},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(database_query_time_seconds_bucket{job=\"platform-backend\"}[5m])) by (le, datasource, operation)) * 1000",
+          "legendFormat": "p95 {{datasource}} {{operation}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(database_query_time_seconds_bucket{job=\"platform-backend\"}[5m])) by (le, datasource, operation)) * 1000",
+          "legendFormat": "p50 {{datasource}} {{operation}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Database Query Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "id": 10,
+      "options": {},
+      "targets": [
+        {
+          "expr": "sum(rate(database_query_time_seconds_count{job=\"platform-backend\"}[5m])) by (datasource, operation, success)",
+          "legendFormat": "{{datasource}} {{operation}} success={{success}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Database Query Rate",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

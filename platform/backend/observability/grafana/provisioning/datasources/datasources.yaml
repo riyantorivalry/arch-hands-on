@@ -44,3 +44,10 @@ datasources:
             value: service_name
       tracesToMetrics:
         datasourceUid: prometheus
+
+  - name: Pyroscope
+    uid: pyroscope
+    type: grafana-pyroscope-datasource
+    access: proxy
+    url: http://pyroscope:4040
+    editable: false

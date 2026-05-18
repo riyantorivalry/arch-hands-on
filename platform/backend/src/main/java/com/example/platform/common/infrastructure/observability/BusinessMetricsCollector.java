@@ -113,8 +113,8 @@ public class BusinessMetricsCollector {
                 .tags(businessTags)
                 .register(meterRegistry);
 
-        this.databaseQueryTimer = Timer.builder("database.query.time")
-                .description("Time taken for database queries")
+        this.databaseQueryTimer = Timer.builder("business.database.query.time")
+                .description("Time taken for manually instrumented business database operations")
                 .tags(businessTags)
                 .register(meterRegistry);
 
