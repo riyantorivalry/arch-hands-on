@@ -8,6 +8,9 @@ Operational procedures live here.
 - local environment bootstrap
 - PostgreSQL outage response
 - Redis degradation response
+- Memcached degradation response
 - consumer lag investigation
 - realtime incident triage
+- authorization policy rollback
+- rate limit misconfiguration rollback
 - regional failover procedure

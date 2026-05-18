@@ -1,6 +1,6 @@
 # Backend
 
-This is the Phase 1 Java modular monolith scaffold with comprehensive observability.
+This is the Java Spring Boot modular monolith for the collaboration platform. It now also acts as a backend architecture comparison surface for realtime delivery, analytics storage, authorization, caching, rate limiting, and database read routing.
 
 ## Stack
 
@@ -37,15 +37,20 @@ Current modules:
 
 ## Current scope
 
-This scaffold establishes:
+The backend currently includes:
 
 - one deployable Spring Boot app
 - tenant-aware request context plumbing
 - explicit module packages
-- placeholder application services and controllers
+- REST, GraphQL read, SSE, and WebSocket entry points
+- PostgreSQL persistence with Flyway migrations
+- PostgreSQL read/write datasource routing
+- MongoDB analytics secondary sink
+- Redis, Caffeine, and Memcached cache strategies
+- versioned comparison APIs and benchmark endpoints
 - health and platform info endpoints
 
-Feature persistence and domain rules should be added module by module from the Phase 1 contracts.
+The canonical API contract lives in [OpenAPI](../../docs/api/openapi.yaml). The broader comparison strategy lives in [backend-comparison-implementation-plan.md](../../docs/architecture/backend-comparison-implementation-plan.md).
 
 ## Realtime Delivery Comparison
 
@@ -247,14 +252,6 @@ Complete observability infrastructure is included:
 - REST endpoints for liveness and readiness probes
 - Custom health indicators for platform services, events, and cache
 - Kubernetes-compatible health check endpoints
-
-### Documentation
-
-Start here:
-1. **[OBSERVABILITY_SUMMARY.md](./OBSERVABILITY_SUMMARY.md)** - Overview of what's implemented
-2. **[OBSERVABILITY.md](./OBSERVABILITY.md)** - Complete feature documentation
-3. **[OBSERVABILITY_INTEGRATION_GUIDE.md](./OBSERVABILITY_INTEGRATION_GUIDE.md)** - How to use in your code
-4. **[OBSERVABILITY_ENDPOINTS.md](./OBSERVABILITY_ENDPOINTS.md)** - API reference and testing
 
 ### Quick Start
 

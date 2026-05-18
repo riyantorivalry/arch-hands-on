@@ -1,8 +1,28 @@
 # Backend Comparison Implementation Plan
 
-**Date:** 2026-05-17  
-**Status:** Proposed  
+**Date:** 2026-05-17
+**Status:** Living implementation plan
 **Purpose:** Turn the backend into a hands-on architecture comparison platform, not only a feature implementation.
+
+## Current Implementation Status
+
+As of 2026-05-18, the mainline backend implements these comparison tracks:
+
+- Realtime delivery: polling (`/api/v1`), SSE (`/api/v2`), and WebSocket (`/ws/v3/realtime`)
+- Analytics storage: PostgreSQL JSON/JSONB-style relational storage (`/api/v1`) and MongoDB (`/api/v2`)
+- Authorization model: RBAC (`/api/v1`) and ABAC/OPA-style local evaluation (`/api/v2`)
+- Authorization policy engine: `in-code`, `opa-local`, `casbin-local`, and seeded database policy rules (`db-policy`)
+- Cache strategy: `caffeine`, `redis`, and `memcached`
+- Rate limiting algorithm: `fixed-window`, `sliding-window`, and `token-bucket`
+- PostgreSQL read routing: primary/replica routing with primary fallback
+
+Still planned or branch-scoped:
+
+- ClickHouse analytics
+- external OPA or Casbin runtime integration
+- Kafka/NATS event backbone
+- document search versioning
+- gRPC service-interface and tenant-per-schema topology experiments
 
 ## 1. Objective
 
@@ -36,10 +56,14 @@ The current backend is a Spring Boot modular monolith with these implemented or 
 - observability stack
 - in-process/domain event infrastructure
 - transactional outbox scaffolding
-- Redis scaffolding
-- WebSocket scaffolding
+- Redis-backed cache strategy
+- Caffeine and Memcached cache strategies
+- WebSocket realtime endpoint
 - OpenSearch document search path with PostgreSQL fallback
-- MongoDB analytics scaffolding
+- MongoDB analytics comparison path
+- authorization policy engine comparison path
+- rate limiting algorithm comparison path
+- PostgreSQL read routing
 
 The baseline should be treated as **version 1 of the platform architecture**, even if some modules still need completion.
 
@@ -355,7 +379,7 @@ Both can coexist:
 
 ## 6.1 Document Search
 
-This should be the first comparison track because the project already has documents and OpenSearch scaffolding.
+This remains a planned comparison track. The project already has documents and an OpenSearch path with PostgreSQL fallback, but the versioned search comparison endpoints are not part of the current mainline behavior yet.
 
 ### v1: PostgreSQL ILIKE
 
@@ -681,12 +705,13 @@ Implementation:
 
 - evaluate attributes such as tenant plan, document status, ownership, risk level
 
-### v3: OPA or Casbin
+### Policy Engine Comparison
 
 Implementation:
 
-- externalize policy decisions
 - keep business facts in application services
+- compare Java in-code rules, OPA-style local evaluation, Casbin-style local evaluation, and database-backed rules behind one stable authorization call
+- defer external OPA or Casbin sidecars until the local policy shape and benchmark behavior are clear
 
 For the in-process comparison track, keep the public application authorization call stable and select the engine by configuration:
 
@@ -943,81 +968,29 @@ Comparison metrics:
 
 ## 7. Implementation Sequence
 
-### Step 1: Stabilize Baseline
+### Completed Mainline Tracks
 
-Before adding more alternatives, complete these backend correctness items:
+- Realtime comparison: polling, SSE, and WebSocket
+- Analytics storage comparison: PostgreSQL JSON/JSONB-style storage and MongoDB
+- Authorization model comparison: RBAC and ABAC/OPA-style local evaluation
+- Authorization policy engine comparison: in-code, OPA-style local, Casbin-style local, and database-backed seeded rules
+- Cache strategy comparison: Caffeine, Redis, and Memcached
+- Rate limiting algorithm comparison: fixed window, sliding window, and token bucket
+- PostgreSQL read routing: primary/replica datasource routing with primary fallback
 
-- add `/api/v1` routes while keeping existing `/api` temporarily compatible
-- persist workspace creation
-- implement real workspace settings behavior
-- add membership checks to all read paths
-- add pagination to list/search endpoints
-- document current known limitations
-- fix outbox processor publisher separation
+### Mainline Gaps
 
-### Step 2: Create Search Comparison
+- Add benchmark reports for each implemented comparison track.
+- Add ADRs for API versioning, feature-toggle comparison, realtime delivery, analytics storage, cache strategy, rate limiting, and authorization policy engines.
+- Add operational runbooks for Redis/Memcached degradation, realtime connection storms, authorization policy rollback, and rate limit rollback.
+- Add document search versioning if search comparison remains a target.
+- Add ClickHouse only when high-volume analytical query benchmarks are ready.
 
-Implement:
+### Branch-Scoped Experiments
 
-- `/api/v1/.../documents/search` using PostgreSQL `ILIKE`
-- `/api/v2/.../documents/search` using PostgreSQL FTS and `pg_trgm`
-- `/api/v3/.../documents/search` using OpenSearch
+Create or keep branches only when the comparison changes topology enough to make side-by-side runtime switching unclear.
 
-Add:
-
-- shared response model
-- shared benchmark dataset
-- k6 benchmark script
-- benchmark report in `docs/benchmarks`
-
-### Step 3: Create Event Comparison
-
-Implement:
-
-- event mode `in-process`
-- event mode `outbox`
-- event mode `kafka`
-
-Add:
-
-- event contract documentation
-- duplicate delivery test
-- failed publish retry test
-- consumer idempotency pattern
-
-### Step 4: Create Realtime Comparison
-
-Implement:
-
-- polling endpoint
-- SSE stream
-- WebSocket stream
-
-Add:
-
-- connection benchmark
-- delivery latency benchmark
-- reconnect scenario
-
-### Step 5: Create Analytics Comparison
-
-Implement:
-
-- PostgreSQL JSONB analytics repository
-- MongoDB analytics repository
-- optional ClickHouse analytics repository
-
-Add:
-
-- same query shape across versions
-- ingestion benchmark
-- dashboard query benchmark
-
-### Step 6: Add Advanced Architecture Branches
-
-Create branches only after the in-monolith comparisons are working.
-
-Recommended branch order:
+Recommended branch candidates:
 
 ```text
 experiment/search-service-extraction
@@ -1102,18 +1075,12 @@ Do not:
 
 ## 11. Suggested Immediate Backlog
 
-1. Create `ADR-005-api-versioning-strategy.md`.
-2. Create `ADR-006-feature-toggle-comparison-strategy.md`.
-3. Introduce `/api/v1` controllers for current REST behavior.
-4. Keep old `/api` paths temporarily as compatibility aliases.
-5. Extract document search behind `DocumentSearchUseCase`.
-6. Add `platform.feature.document-search.mode`.
-7. Implement `PostgresIlikeDocumentSearch`.
-8. Implement `PostgresFullTextDocumentSearch`.
-9. Move current OpenSearch implementation behind `OpenSearchDocumentSearch`.
-10. Add pagination to all search/list endpoints.
-11. Add k6 script for document search benchmark.
-12. Write first search benchmark report.
+1. Create ADRs for the implemented comparison strategy: API versioning, feature toggles, realtime delivery, analytics storage, cache strategy, rate limiting, and authorization policy engines.
+2. Add benchmark reports for realtime, analytics storage, cache strategy, rate limiting, and authorization policy engine tracks.
+3. Add runbooks for Redis/Memcached degradation, realtime connection storms, authorization policy rollback, and rate limit rollback.
+4. Add k6 or Gatling scripts that exercise the existing benchmark endpoints.
+5. Decide whether document search remains the next mainline comparison or should move to a branch/service-extraction experiment.
+6. Document known local infrastructure requirements for MongoDB, Redis, Memcached, and PostgreSQL replicas.
 
 ## 12. Decision Summary
 
@@ -1123,14 +1090,15 @@ Use **feature toggles** for implementation comparisons that should keep the same
 
 Use **branches** for topology or infrastructure changes that would make the mainline backend hard to run, test, or understand.
 
-Recommended first comparison:
+Current mainline comparison surface:
 
 ```text
-Document Search
-v1: PostgreSQL ILIKE
-v2: PostgreSQL FTS + pg_trgm
-v3: OpenSearch
-v4: Semantic Search with pgvector or Qdrant
+Realtime: polling, SSE, WebSocket
+Analytics: PostgreSQL JSON/JSONB-style storage, MongoDB
+Authorization model: RBAC, ABAC/OPA-style local
+Authorization engine: in-code, OPA-style local, Casbin-style local, db-policy
+Cache: Caffeine, Redis, Memcached
+Rate limiting: fixed window, sliding window, token bucket
 ```
 
 This gives the project an immediate senior-architect learning loop: same business capability, multiple implementations, measurable tradeoffs, and documented decisions.

@@ -1,35 +1,21 @@
 # Architecture Workspace
 
-This directory holds diagrams and design notes derived from the master plan.
+This directory holds the platform's system views, bounded-context notes, and backend comparison strategy.
 
-## Phase 0: Foundation (Complete)
+## Core Architecture
 
-- [system-context.md](./system-context.md) - System boundaries and external actors
-- [container-view.md](./container-view.md) - Container/deployment topology
-- [bounded-contexts.md](./bounded-contexts.md) - Domain and module boundaries
-- [phase-1-domain-model-outline.md](./phase-1-domain-model-outline.md) - Core entities and invariants
-- [phase-1-module-contracts.md](./phase-1-module-contracts.md) - Module APIs and transaction rules
+- [system-context.md](./system-context.md) - system boundaries and external actors
+- [container-view.md](./container-view.md) - container and deployment topology
+- [bounded-contexts.md](./bounded-contexts.md) - domain and module boundaries
+- [phase-1-domain-model-outline.md](./phase-1-domain-model-outline.md) - core entities and invariants
+- [phase-1-module-contracts.md](./phase-1-module-contracts.md) - module APIs and transaction rules
 
-## Phase 1: Implementation Guidance
+## Comparison Architecture
 
-- [PHASE-1-IMPLEMENTATION-ROADMAP.md](./PHASE-1-IMPLEMENTATION-ROADMAP.md) **← IMPLEMENTATION CHECKLIST**
-  - Implementation priority order
-  - File structure checklist
-  - Testing strategy
-  - Success criteria for each module
+- [backend-comparison-implementation-plan.md](./backend-comparison-implementation-plan.md) - how API versioning, feature toggles, and branch experiments are used
 
-- [PHASE-1b-EVENT-INFRASTRUCTURE.md](./PHASE-1b-EVENT-INFRASTRUCTURE.md) **← EVENT MODEL (just completed)**
-  - Domain events architecture
-  - In-process event publisher
-  - 8 key events defined for Phase 1 workflows
-  - Path to async events in Phase 2
+Current mainline comparison tracks include realtime delivery, analytics storage, authorization models, authorization policy engines, cache strategies, rate limiting algorithms, and PostgreSQL read routing. Topology-changing experiments such as gRPC service interfaces and tenant-per-schema isolation should stay documented on their experiment branches until merged.
 
-## Future phases
+## Future Architecture Notes
 
-- Phase 2: Realtime, Redis, and event backbone
-  - sequence diagrams for key workflows
-  - deployment topology with new services
-  - event contracts specification
-- Phase 3+: Search, files, analytics, AI foundations
-- Phase 4+: Service extraction decisions
-- Phase 5+: Observability and resilience hardening
+Add new architecture documents here when a decision changes the module boundary, deployment topology, persistence model, or public contract. Use ADRs in [../adr/](../adr/) for durable decisions and this directory for working design notes.

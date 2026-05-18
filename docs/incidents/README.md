@@ -2,23 +2,17 @@
 
 This directory stores simulated incident reports and postmortems.
 
-## Quick start
-
-See [INCIDENT_TEMPLATE.md](./INCIDENT_TEMPLATE.md) for the full report structure and guidelines.
-
 ## Initial scenario backlog
-
-Phase 1 simulation scenarios:
 
 - traffic spike during a major tenant event
 - PostgreSQL replication lag
 - duplicate Kafka consumer delivery
-- partial regional outage
-
-Phase 2+ scenarios (once infrastructure added):
-
 - cache stampede
 - realtime connection storms
+- authorization policy regression
+- rate limit false positive spike
+- analytics secondary sink outage
+- partial regional outage
 - asymmetric network partitions
 - cascading service degradation
 
@@ -36,7 +30,7 @@ Each incident report should include:
 
 ## How to contribute
 
-1. Copy [INCIDENT_TEMPLATE.md](./INCIDENT_TEMPLATE.md) to a new file: `INCIDENT-[date]-[subject].md`
+1. Create a new file named `INCIDENT-[date]-[subject].md`
 2. Document the incident with precise timeline and metrics
 3. Include logs, traces, or dashboard snapshots in appendix
 4. Ensure follow-up actions are owned and tracked

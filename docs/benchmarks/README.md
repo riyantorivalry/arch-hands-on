@@ -6,13 +6,17 @@ Store benchmark plans, scripts, raw outputs, and summary reports here.
 
 See [BENCHMARK_TEMPLATE.md](./BENCHMARK_TEMPLATE.md) for the full report structure and guidelines.
 
-## Planned comparison areas
+## Current comparison areas
 
-- REST vs gRPC
-- JSON vs Protobuf
-- PostgreSQL vs MongoDB for selected workflows
-- WebSocket vs SSE
-- monolith vs extracted service overhead
+- Realtime delivery: polling vs SSE vs WebSocket
+- Analytics storage: PostgreSQL JSON/JSONB-style storage vs MongoDB
+- Authorization model: RBAC vs ABAC/OPA-style local evaluation
+- Authorization policy engine: in-code vs OPA-style local vs Casbin-style local vs database-backed rules
+- Cache strategy: Caffeine vs Redis vs Memcached
+- Rate limiting algorithm: fixed window vs sliding window vs token bucket
+- Read routing: primary-only fallback vs primary/replica routing
+
+Branch-level experiments can add benchmark reports for REST vs gRPC, JSON vs Protobuf, tenant-per-schema isolation, or extracted service overhead when those branches are active.
 
 ## Expected structure
 

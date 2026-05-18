@@ -316,7 +316,7 @@ paths:
       tags:
         - Identity Access
       summary: Evaluate an authorization decision using a specific policy engine.
-      description: Benchmark endpoint for in-code, local OPA-compatible, and local Casbin-style policy engine comparison.
+      description: Benchmark endpoint for in-code, local OPA-compatible, local Casbin-style, and database-backed policy engine comparison.
       operationId: decideAuthorizationBenchmarkEngine
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
