@@ -93,8 +93,11 @@ services:
       - alloy-data:/var/lib/alloy
     ports:
       - "12345:12345"
+      - "4317:4317"   # OTLP gRPC (host -> Alloy)
+      - "4318:4318"   # OTLP HTTP (host -> Alloy)
     depends_on:
       - loki
+      - tempo
     restart: unless-stopped
 
   alertmanager:
@@ -109,21 +112,6 @@ services:
       - alertmanager-data:/alertmanager
     ports:
       - "9093:9093"
-    restart: unless-stopped
-
-  otel-collector:
-    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector:0.152.0}
-    container_name: observability_otel_collector
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./otel/collector-config.yaml:/etc/otel-collector-config.yaml:ro
-    ports:
-      - "4317:4317"   # OTLP gRPC (host -> collector)
-      - "4318:4318"   # OTLP HTTP (host -> collector)
-      - "8889:8889"   # Prometheus scrape endpoint for OTLP metrics
-      - "13133:13133" # Collector health
-    depends_on:
-      - tempo
     restart: unless-stopped
 
   tempo:

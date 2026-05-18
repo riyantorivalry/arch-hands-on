@@ -1,18 +1,17 @@
-Observability stack (Prometheus + Grafana + Loki + Alloy + Tempo + Pyroscope + OpenTelemetry Collector + Alertmanager + PostgreSQL exporter)
+Observability stack (Prometheus + Grafana + Loki + Alloy + Tempo + Pyroscope + Alertmanager + PostgreSQL exporter)
 
 This folder contains a self-contained observability stack you can run locally to collect metrics, logs and traces from the backend. It is still a single-node development stack, but the defaults now mirror production concerns: pinned images, explicit retention, no default `admin/admin` Grafana password, OTLP trace export, log collection with supported Grafana Alloy, and alert routing through Alertmanager.
 
 Contents
-- `docker-compose.yml` - launches Prometheus, Grafana, Loki, Alloy, Tempo, Pyroscope, the OpenTelemetry Collector, Alertmanager, PostgreSQL exporters, and supporting local tools
+- `docker-compose.yml` - launches Prometheus, Grafana, Loki, Alloy, Tempo, Pyroscope, Alertmanager, PostgreSQL exporters, and supporting local tools
 - `.env.example` - required runtime settings and pinned image versions
 - OpenSearch and OpenSearch Dashboards for document/log search
 - `prometheus/prometheus.yml` - Prometheus scrape configuration
 - `prometheus/rules/alert_rules.yml` - availability, SLO, JVM, event, outbox, and PostgreSQL alerts
 - `grafana/provisioning` - Grafana provisioning for datasources and dashboards
 - `grafana/dashboards` - example dashboard JSON
-- `alloy/config.alloy` - Alloy pipeline to tail backend JSON logs and ship them to Loki
+- `alloy/config.alloy` - Alloy pipelines to receive OTLP traces, forward traces to Tempo, tail backend JSON logs, and ship logs to Loki
 - `loki/config.yaml` - Loki single-node config with filesystem storage and retention
-- `otel/collector-config.yaml` - OTLP receiver and trace exporter to Tempo
 - `tempo/tempo.yaml` - Tempo single-node trace store
 - Pyroscope - single-node profile store for flamegraphs and continuous profiling
 
@@ -40,6 +39,8 @@ Open the following UIs:
 - Pyroscope: http://localhost:4040
 - Alertmanager: http://localhost:9093
 - Alloy: http://localhost:12345
+- Alloy OTLP HTTP: http://localhost:4318
+- Alloy OTLP gRPC: localhost:4317
 - PostgreSQL exporter primary: http://localhost:9187/metrics
 - PostgreSQL exporter replica: http://localhost:9188/metrics
 - OpenSearch Dashboards: http://localhost:5601
@@ -49,7 +50,7 @@ Verify:
 - Prometheus should have `postgres-primary` and `postgres-replica` under Status -> Targets after Postgres is running
 - Grafana should auto-provision the Prometheus, Loki, Tempo, and Pyroscope datasources and import the dashboards `Platform Backend - Observability` and `Platform PostgreSQL - Connections`
 - Alloy should be pushing JSON logs into Loki; in Grafana Explore you can query Loki with `{job="platform-backend-logs"}`
-- Spring Boot traces should flow to Tempo when the backend runs with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces`
+- Spring Boot traces should flow through Alloy to Tempo when the backend runs with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces`
 - JDBC timings should appear in Prometheus as `database_query_time_seconds_*` after API requests hit PostgreSQL
 - Flamegraphs should appear in Pyroscope/Grafana after starting the backend with profiling enabled
 - Alertmanager should receive active Prometheus alerts from `prometheus/rules/alert_rules.yml`
@@ -76,7 +77,7 @@ Troubleshooting
 - If metrics don't show, ensure backend is reachable from the container. On Windows/Mac `host.docker.internal` works; on Linux you may need to use the host's IP.
 - If PostgreSQL metrics don't show, ensure the main `compose.yaml` Postgres services are running and the exporter URIs in `.env` point at reachable host/port pairs.
 - If logs aren't ingested, ensure `platform/backend/logs/*.json.log` exist and are mounted.
-- If traces don't appear, confirm `management.otlp.tracing.endpoint` resolves to the collector and tracing sampling is non-zero.
+- If traces don't appear, confirm `management.otlp.tracing.endpoint` resolves to Alloy and tracing sampling is non-zero.
 - If profile data does not appear, confirm Pyroscope is running, `PYROSCOPE_AGENT_ENABLED=true` is set for the backend process, and the Java profiler supports the current host OS.
 - To re-create the stack:
 
@@ -88,7 +89,7 @@ docker compose up -d
 Optional additions
 - Replace the placeholder Alertmanager receivers with PagerDuty, Opsgenie, Slack, email, or webhook receivers for real notifications.
 - Configure remote storage: Prometheus remote write, Loki object storage, and Tempo object storage.
-- Add authentication/TLS in front of Prometheus, Alertmanager, Loki, Tempo, Alloy, and the OTel Collector before exposing them outside a trusted network.
+- Add authentication/TLS in front of Prometheus, Alertmanager, Loki, Tempo, and Alloy before exposing them outside a trusted network.
 - Back up Grafana and Prometheus volumes or provision all dashboards, folders, datasources, and alert rules as code.
 
 

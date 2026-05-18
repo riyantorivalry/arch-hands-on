@@ -3,6 +3,49 @@ logging {
   format = "logfmt"
 }
 
+otelcol.receiver.otlp "platform" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces = [otelcol.processor.memory_limiter.platform.input]
+  }
+}
+
+otelcol.processor.memory_limiter "platform" {
+  check_interval = "5s"
+  limit          = "512MiB"
+  spike_limit    = "128MiB"
+
+  output {
+    traces = [otelcol.processor.batch.platform.input]
+  }
+}
+
+otelcol.processor.batch "platform" {
+  timeout         = "5s"
+  send_batch_size = 1024
+
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+
+    tls {
+      insecure = true
+    }
+  }
+}
+
 loki.source.file "platform_json_logs" {
   targets = [
     {
