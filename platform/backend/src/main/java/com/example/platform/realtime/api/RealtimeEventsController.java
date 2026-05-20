@@ -6,15 +6,17 @@ import com.example.platform.identityaccess.domain.MembershipEntity;
 import com.example.platform.identityaccess.domain.MembershipStatus;
 import com.example.platform.identityaccess.infrastructure.MembershipRepository;
 import com.example.platform.realtime.application.RealtimeEventService;
+import com.example.platform.realtime.application.RealtimeEventService.RealtimeEvent;
 import com.example.platform.realtime.application.RealtimeEventService.RealtimePollResponse;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
 
 @Validated
 @RestController
@@ -42,7 +44,7 @@ public class RealtimeEventsController {
     }
 
     @GetMapping(path = "/v2/workspaces/{workspaceId}/events/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamEvents(
+    public Flux<ServerSentEvent<RealtimeEvent>> streamEvents(
             @PathVariable String workspaceId,
             @RequestParam(defaultValue = "0") long since
     ) {

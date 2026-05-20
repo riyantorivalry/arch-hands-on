@@ -1,29 +1,33 @@
 package com.example.platform.common.web;
 
+import java.util.Map;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.socket.config.annotation.EnableWebSocket;
-import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
-import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+import org.springframework.web.reactive.HandlerMapping;
+import org.springframework.web.reactive.handler.SimpleUrlHandlerMapping;
+import org.springframework.web.reactive.socket.server.support.WebSocketHandlerAdapter;
 
 /**
  * WebSocket configuration for realtime updates.
  * Keeps the original endpoint and adds the versioned comparison endpoint.
  */
 @Configuration
-@EnableWebSocket
-public class WebSocketConfig implements WebSocketConfigurer {
+public class WebSocketConfig {
 
-    private final RealtimeEventHandler realtimeEventHandler;
-
-    public WebSocketConfig(RealtimeEventHandler realtimeEventHandler) {
-        this.realtimeEventHandler = realtimeEventHandler;
+    @Bean
+    public HandlerMapping webSocketHandlerMapping(RealtimeEventHandler realtimeEventHandler) {
+        Map<String, RealtimeEventHandler> handlers = Map.of(
+                "/ws/realtime", realtimeEventHandler,
+                "/ws/v3/realtime", realtimeEventHandler
+        );
+        SimpleUrlHandlerMapping mapping = new SimpleUrlHandlerMapping();
+        mapping.setOrder(-1);
+        mapping.setUrlMap(handlers);
+        return mapping;
     }
 
-    @Override
-    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(realtimeEventHandler, "/ws/realtime", "/ws/v3/realtime")
-                .setAllowedOrigins("*")
-                .withSockJS();
+    @Bean
+    public WebSocketHandlerAdapter webSocketHandlerAdapter() {
+        return new WebSocketHandlerAdapter();
     }
 }
-

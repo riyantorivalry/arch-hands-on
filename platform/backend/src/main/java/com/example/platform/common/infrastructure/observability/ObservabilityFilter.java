@@ -2,26 +2,26 @@ package com.example.platform.common.infrastructure.observability;
 
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
-
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.util.UUID;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Mono;
 
 /**
  * Filter for HTTP request/response observability.
  * Adds correlation IDs, trace IDs, and captures request/response metadata.
  */
 @Component
-public class ObservabilityFilter extends OncePerRequestFilter {
+public class ObservabilityFilter implements WebFilter, Ordered {
     private static final Logger logger = LoggerFactory.getLogger(ObservabilityFilter.class);
 
     private static final String CORRELATION_ID_HEADER = "X-Correlation-ID";
@@ -45,14 +45,23 @@ public class ObservabilityFilter extends OncePerRequestFilter {
     private Tracer tracer;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
+    public int getOrder() {
+        return Ordered.HIGHEST_PRECEDENCE;
+    }
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        if (shouldNotFilter(exchange)) {
+            return chain.filter(exchange);
+        }
 
         long startTime = System.currentTimeMillis();
-        String correlationId = getOrCreateCorrelationId(request);
-        String traceId = getOrCreateTraceId(request);
+        String method = exchange.getRequest().getMethod().name();
+        String path = exchange.getRequest().getPath().pathWithinApplication().value();
+        String correlationId = getOrCreateCorrelationId(exchange);
+        String traceId = getOrCreateTraceId(exchange);
         String requestId = UUID.randomUUID().toString();
-        String tenantId = request.getHeader(TENANT_ID_HEADER);
+        String tenantId = exchange.getRequest().getHeaders().getFirst(TENANT_ID_HEADER);
 
         // Set MDC values for logging
         MDC.put(CORRELATION_ID_MDC, correlationId);
@@ -61,49 +70,55 @@ public class ObservabilityFilter extends OncePerRequestFilter {
         if (tenantId != null) {
             MDC.put(TENANT_ID_MDC, tenantId);
         }
-        MDC.put(METHOD_MDC, request.getMethod());
-        MDC.put(PATH_MDC, request.getRequestURI());
+        MDC.put(METHOD_MDC, method);
+        MDC.put(PATH_MDC, path);
 
         // Add response headers for client to use
-        response.setHeader(CORRELATION_ID_HEADER, correlationId);
-        response.setHeader(TRACE_ID_HEADER, traceId);
-        response.setHeader(REQUEST_ID_HEADER, requestId);
+        exchange.getResponse().getHeaders().set(CORRELATION_ID_HEADER, correlationId);
+        exchange.getResponse().getHeaders().set(TRACE_ID_HEADER, traceId);
+        exchange.getResponse().getHeaders().set(REQUEST_ID_HEADER, requestId);
 
-        try {
-            logger.debug("HTTP request started - method: {}, path: {}, correlationId: {}",
-                    request.getMethod(), request.getRequestURI(), correlationId);
+        logger.debug("HTTP request started - method: {}, path: {}, correlationId: {}",
+                method, path, correlationId);
 
-            filterChain.doFilter(request, response);
-
-        } finally {
-            long duration = System.currentTimeMillis() - startTime;
-            MDC.put(STATUS_MDC, String.valueOf(response.getStatus()));
-            MDC.put(DURATION_MDC, String.valueOf(duration));
-
-            logger.info("HTTP request completed - method: {}, path: {}, status: {}, duration: {}ms",
-                    request.getMethod(), request.getRequestURI(), response.getStatus(), duration);
-
-            // Record metrics if collector is available
-            if (metricsCollector != null) {
-                if (response.getStatus() >= 400) {
-                    metricsCollector.recordApiError();
-                }
-            }
-
-            // Clear MDC
-            MDC.clear();
-        }
+        return chain.filter(exchange)
+                .doFinally(signalType -> recordCompletion(exchange, method, path, startTime));
     }
 
-    private String getOrCreateCorrelationId(HttpServletRequest request) {
-        String correlationId = request.getHeader(CORRELATION_ID_HEADER);
+    private void recordCompletion(ServerWebExchange exchange, String method, String path, long startTime) {
+        long duration = System.currentTimeMillis() - startTime;
+        HttpStatusCode status = exchange.getResponse().getStatusCode();
+        int statusCode = status == null ? HttpStatus.OK.value() : status.value();
+        MDC.put(STATUS_MDC, String.valueOf(statusCode));
+        MDC.put(DURATION_MDC, String.valueOf(duration));
+
+        logger.info("HTTP request completed - method: {}, path: {}, status: {}, duration: {}ms",
+                method, path, statusCode, duration);
+
+        // Record metrics if collector is available
+        if (metricsCollector != null && statusCode >= 400) {
+            metricsCollector.recordApiError();
+        }
+
+        MDC.remove(CORRELATION_ID_MDC);
+        MDC.remove(TRACE_ID_MDC);
+        MDC.remove(REQUEST_ID_MDC);
+        MDC.remove(TENANT_ID_MDC);
+        MDC.remove(METHOD_MDC);
+        MDC.remove(PATH_MDC);
+        MDC.remove(STATUS_MDC);
+        MDC.remove(DURATION_MDC);
+    }
+
+    private String getOrCreateCorrelationId(ServerWebExchange exchange) {
+        String correlationId = exchange.getRequest().getHeaders().getFirst(CORRELATION_ID_HEADER);
         if (correlationId == null || correlationId.isEmpty()) {
             correlationId = UUID.randomUUID().toString();
         }
         return correlationId;
     }
 
-    private String getOrCreateTraceId(HttpServletRequest request) {
+    private String getOrCreateTraceId(ServerWebExchange exchange) {
         if (tracer != null) {
             Span currentSpan = tracer.currentSpan();
             if (currentSpan != null && currentSpan.context() != null) {
@@ -114,17 +129,16 @@ public class ObservabilityFilter extends OncePerRequestFilter {
             }
         }
 
-        String traceId = request.getHeader(TRACE_ID_HEADER);
+        String traceId = exchange.getRequest().getHeaders().getFirst(TRACE_ID_HEADER);
         if (traceId == null || traceId.isEmpty()) {
             traceId = UUID.randomUUID().toString();
         }
         return traceId;
     }
 
-    @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+    private boolean shouldNotFilter(ServerWebExchange exchange) {
         // Skip filtering for health check and metrics endpoints
-        String path = request.getRequestURI();
+        String path = exchange.getRequest().getPath().pathWithinApplication().value();
         return path.startsWith("/actuator/health") ||
                path.startsWith("/actuator/metrics") ||
                path.startsWith("/actuator/prometheus");

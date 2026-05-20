@@ -1,18 +1,22 @@
 package com.example.platform.common.web;
 
 import com.example.platform.identityaccess.application.SessionAuthenticationService;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.slf4j.MDC;
+import org.springframework.core.Ordered;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Mono;
 
 @Component
-public class TenantContextFilter extends OncePerRequestFilter {
+public class TenantContextFilter implements WebFilter, Ordered {
 
     public static final String CORRELATION_HEADER = "X-Correlation-Id";
     private static final String AUTHORIZATION_HEADER = "Authorization";
@@ -24,52 +28,57 @@ public class TenantContextFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
-        String correlationId = readHeader(request, CORRELATION_HEADER, UUID.randomUUID().toString());
-        RequestContext context;
-        try {
-            context = resolveContext(request, correlationId);
-        } catch (AuthenticationRequiredException exception) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.setCharacterEncoding("UTF-8");
-            response.getWriter().write("{\"code\":\"UNAUTHORIZED\",\"message\":\"" + exception.getMessage() + "\"}");
-            return;
+    public int getOrder() {
+        return Ordered.HIGHEST_PRECEDENCE + 10;
+    }
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        if (shouldNotFilter(exchange)) {
+            return chain.filter(exchange);
         }
 
-        response.setHeader(CORRELATION_HEADER, correlationId);
+        String correlationId = readHeader(exchange, CORRELATION_HEADER, UUID.randomUUID().toString());
+        RequestContext context;
+        try {
+            context = resolveContext(exchange, correlationId);
+        } catch (AuthenticationRequiredException exception) {
+            return writeUnauthorized(exchange, exception);
+        }
+
+        exchange.getResponse().getHeaders().set(CORRELATION_HEADER, correlationId);
         RequestContextHolder.set(context);
         MDC.put("correlationId", context.correlationId());
         MDC.put("tenantId", valueOrDash(context.tenantId()));
         MDC.put("workspaceId", valueOrDash(context.workspaceId()));
         MDC.put("userId", valueOrDash(context.userId()));
-        try {
-            filterChain.doFilter(request, response);
-        } finally {
-            MDC.clear();
-            RequestContextHolder.clear();
-        }
+        return chain.filter(exchange)
+                .doFinally(signalType -> {
+                    MDC.remove("correlationId");
+                    MDC.remove("tenantId");
+                    MDC.remove("workspaceId");
+                    MDC.remove("userId");
+                    RequestContextHolder.clear();
+                });
     }
 
-    @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI();
+    private boolean shouldNotFilter(ServerWebExchange exchange) {
+        String path = exchange.getRequest().getPath().pathWithinApplication().value();
         return path.startsWith("/actuator");
     }
 
-    private String readHeader(HttpServletRequest request, String headerName, String fallback) {
-        String value = request.getHeader(headerName);
+    private String readHeader(ServerWebExchange exchange, String headerName, String fallback) {
+        String value = exchange.getRequest().getHeaders().getFirst(headerName);
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private RequestContext resolveContext(HttpServletRequest request, String correlationId) {
-        String path = request.getRequestURI();
+    private RequestContext resolveContext(ServerWebExchange exchange, String correlationId) {
+        String path = exchange.getRequest().getPath().pathWithinApplication().value();
         if (isPublicEndpoint(path)) {
             return new RequestContext(null, null, null, correlationId);
         }
 
-        String authorization = request.getHeader(AUTHORIZATION_HEADER);
+        String authorization = exchange.getRequest().getHeaders().getFirst(AUTHORIZATION_HEADER);
         if (authorization == null || authorization.isBlank() || !authorization.startsWith("Bearer ")) {
             throw new AuthenticationRequiredException("Bearer token is required");
         }
@@ -83,5 +92,15 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
     private String valueOrDash(String value) {
         return value == null || value.isBlank() ? "-" : value;
+    }
+
+    private Mono<Void> writeUnauthorized(ServerWebExchange exchange, AuthenticationRequiredException exception) {
+        var response = exchange.getResponse();
+        response.setStatusCode(HttpStatus.UNAUTHORIZED);
+        response.getHeaders().set(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+        byte[] body = ("{\"code\":\"UNAUTHORIZED\",\"message\":\"" + exception.getMessage() + "\"}")
+                .getBytes(StandardCharsets.UTF_8);
+        DataBuffer buffer = response.bufferFactory().wrap(body);
+        return response.writeWith(Mono.just(buffer));
     }
 }

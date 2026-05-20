@@ -2,7 +2,6 @@ package com.example.platform.common.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.platform.realtime.application.RealtimeEventService.RealtimeEvent;
-import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -10,10 +9,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.web.reactive.socket.WebSocketHandler;
+import org.springframework.web.reactive.socket.WebSocketMessage;
+import org.springframework.web.reactive.socket.WebSocketSession;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 /**
  * WebSocket handler for realtime event broadcasts.
@@ -23,13 +23,13 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
  * Events are broadcast to connected clients in real-time via WebSocket.
  */
 @Component
-public class RealtimeEventHandler extends TextWebSocketHandler {
+public class RealtimeEventHandler implements WebSocketHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RealtimeEventHandler.class);
 
     private final ObjectMapper objectMapper;
-    // Map of sessionId -> WebSocketSession
-    private final ConcurrentHashMap<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
+    // Map of sessionId -> outbound session state
+    private final ConcurrentHashMap<String, SessionState> sessions = new ConcurrentHashMap<>();
     // Map of sessionId -> Set of subscribed workspaceIds
     private final ConcurrentHashMap<String, Set<String>> subscriptions = new ConcurrentHashMap<>();
 
@@ -38,54 +38,55 @@ public class RealtimeEventHandler extends TextWebSocketHandler {
     }
 
     @Override
-    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+    public Mono<Void> handle(WebSocketSession session) {
         String sessionId = session.getId();
-        sessions.put(sessionId, session);
+        SessionState state = new SessionState(Sinks.many().multicast().directBestEffort());
+        sessions.put(sessionId, state);
         subscriptions.put(sessionId, Collections.synchronizedSet(new HashSet<>()));
 
         LOGGER.info("WebSocket connection established: {}", sessionId);
+
+        Mono<Void> inbound = session.receive()
+                .map(WebSocketMessage::getPayloadAsText)
+                .doOnNext(content -> handleTextMessage(sessionId, state, content))
+                .doOnError(exception -> LOGGER.error("WebSocket transport error for session {}", sessionId, exception))
+                .doFinally(signalType -> state.outboundMessages().tryEmitComplete())
+                .then();
+
+        Mono<Void> outbound = session.send(state.outboundMessages().asFlux()
+                .map(this::serialize)
+                .map(session::textMessage));
+
+        return Mono.when(inbound, outbound)
+                .doFinally(signalType -> {
+                    sessions.remove(sessionId);
+                    subscriptions.remove(sessionId);
+                    LOGGER.info("WebSocket connection closed: {}", sessionId);
+                });
     }
 
-    @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        String content = message.getPayload();
-        String sessionId = session.getId();
-
+    private void handleTextMessage(String sessionId, SessionState state, String content) {
         try {
             // Parse subscription messages like {"action": "subscribe", "workspaceId": "workspace-123"}
-            RealtimeMessage rtMsg = objectMapper.readValue(content, RealtimeMessage.class);
+            RealtimeMessage message = objectMapper.readValue(content, RealtimeMessage.class);
 
-            if ("subscribe".equals(rtMsg.action)) {
-                subscriptions.get(sessionId).add(rtMsg.workspaceId);
-                LOGGER.debug("Session {} subscribed to workspace: {}", sessionId, rtMsg.workspaceId);
+            if ("subscribe".equals(message.action)) {
+                subscriptions.get(sessionId).add(message.workspaceId);
+                LOGGER.debug("Session {} subscribed to workspace: {}", sessionId, message.workspaceId);
 
-                // Send confirmation
-                sendMessage(session, new RealtimeMessage(
+                state.outboundMessages().tryEmitNext(new RealtimeMessage(
                     "subscribed",
-                    rtMsg.workspaceId,
+                    message.workspaceId,
                     null,
                     "Successfully subscribed to workspace"
                 ));
-            } else if ("unsubscribe".equals(rtMsg.action)) {
-                subscriptions.get(sessionId).remove(rtMsg.workspaceId);
-                LOGGER.debug("Session {} unsubscribed from workspace: {}", sessionId, rtMsg.workspaceId);
+            } else if ("unsubscribe".equals(message.action)) {
+                subscriptions.get(sessionId).remove(message.workspaceId);
+                LOGGER.debug("Session {} unsubscribed from workspace: {}", sessionId, message.workspaceId);
             }
-        } catch (Exception e) {
-            LOGGER.error("Error handling WebSocket message", e);
+        } catch (Exception exception) {
+            LOGGER.error("Error handling WebSocket message", exception);
         }
-    }
-
-    @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
-        String sessionId = session.getId();
-        sessions.remove(sessionId);
-        subscriptions.remove(sessionId);
-        LOGGER.info("WebSocket connection closed: {} ({})", sessionId, status);
-    }
-
-    @Override
-    public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-        LOGGER.error("WebSocket transport error for session {}", session.getId(), exception);
     }
 
     /**
@@ -93,7 +94,7 @@ public class RealtimeEventHandler extends TextWebSocketHandler {
      * Called by EventRealtimeBroadcaster listener.
      */
     public void broadcastEvent(RealtimeEvent event) {
-        RealtimeMessage msg = new RealtimeMessage(
+        RealtimeMessage message = new RealtimeMessage(
             "event",
             event.workspaceId(),
             event.eventType(),
@@ -101,34 +102,35 @@ public class RealtimeEventHandler extends TextWebSocketHandler {
             event.version()
         );
 
-        sessions.forEach((sessionId, session) -> {
-            if (session.isOpen()) {
-                Set<String> sessionSubscriptions = subscriptions.get(sessionId);
-                if (sessionSubscriptions == null) {
-                    sessionSubscriptions = Collections.emptySet();
-                }
+        sessions.forEach((sessionId, state) -> {
+            Set<String> sessionSubscriptions = subscriptions.get(sessionId);
+            if (sessionSubscriptions == null) {
+                sessionSubscriptions = Collections.emptySet();
+            }
 
-                // Broadcast if:
-                // 1. Client is subscribed to the specific workspace, OR
-                // 2. workspaceId is null (tenant-wide broadcast) and client has any subscription for this tenant
-                boolean shouldBroadcast = (event.workspaceId() != null && sessionSubscriptions.contains(event.workspaceId())) ||
-                                        (event.workspaceId() == null && !sessionSubscriptions.isEmpty());
+            // Broadcast if:
+            // 1. Client is subscribed to the specific workspace, OR
+            // 2. workspaceId is null (tenant-wide broadcast) and client has any subscription for this tenant
+            boolean shouldBroadcast = (event.workspaceId() != null && sessionSubscriptions.contains(event.workspaceId())) ||
+                                    (event.workspaceId() == null && !sessionSubscriptions.isEmpty());
 
-                if (shouldBroadcast) {
-                    try {
-                        sendMessage(session, msg);
-                        LOGGER.debug("Event broadcasted to session {}: type={}", sessionId, event.eventType());
-                    } catch (IOException e) {
-                        LOGGER.warn("Error sending message to session {}", sessionId, e);
-                    }
+            if (shouldBroadcast) {
+                Sinks.EmitResult result = state.outboundMessages().tryEmitNext(message);
+                if (result.isSuccess()) {
+                    LOGGER.debug("Event broadcasted to session {}: type={}", sessionId, event.eventType());
+                } else {
+                    LOGGER.warn("Error queueing WebSocket message for session {}: {}", sessionId, result);
                 }
             }
         });
     }
 
-    private void sendMessage(WebSocketSession session, RealtimeMessage message) throws IOException {
-        String json = objectMapper.writeValueAsString(message);
-        session.sendMessage(new TextMessage(json));
+    private String serialize(RealtimeMessage message) {
+        try {
+            return objectMapper.writeValueAsString(message);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Failed to serialize realtime message", exception);
+        }
     }
 
     /**
@@ -170,5 +172,8 @@ public class RealtimeEventHandler extends TextWebSocketHandler {
             this.version = version;
             this.data = data;
         }
+    }
+
+    private record SessionState(Sinks.Many<RealtimeMessage> outboundMessages) {
     }
 }

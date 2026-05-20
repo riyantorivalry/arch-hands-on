@@ -1,22 +1,15 @@
 package com.example.platform;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static com.example.platform.WebFluxRequestBuilders.post;
+import static com.example.platform.WebFluxResultMatchers.jsonPath;
+import static com.example.platform.WebFluxResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
-@AutoConfigureMockMvc
-class AuthorizationComparisonIntegrationTests {
-
-    @Autowired
-    private MockMvc mockMvc;
+class AuthorizationComparisonIntegrationTests extends WebFluxIntegrationTestSupport {
 
     @Test
     void comparesRbacAndAbacOpaAuthorizationDecisions() throws Exception {

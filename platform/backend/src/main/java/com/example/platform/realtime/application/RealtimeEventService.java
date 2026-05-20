@@ -1,18 +1,16 @@
 package com.example.platform.realtime.application;
 
 import com.example.platform.common.domain.DomainEvent;
-import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 @Service
 public class RealtimeEventService {
@@ -20,13 +18,10 @@ public class RealtimeEventService {
     private final AtomicLong versionSequence = new AtomicLong();
     private final Object eventLogLock = new Object();
     private final Deque<RealtimeEvent> eventLog = new ArrayDeque<>();
-    private final Set<SseSubscription> sseSubscriptions = ConcurrentHashMap.newKeySet();
+    private final Sinks.Many<RealtimeEvent> realtimeEvents = Sinks.many().multicast().directBestEffort();
 
     @Value("${platform.realtime.max-events:1000}")
     private int maxEvents;
-
-    @Value("${platform.realtime.sse-timeout-ms:300000}")
-    private long sseTimeoutMs;
 
     public RealtimeEvent append(String tenantId, String workspaceId, DomainEvent event) {
         RealtimeEvent realtimeEvent = new RealtimeEvent(
@@ -49,7 +44,7 @@ public class RealtimeEventService {
             }
         }
 
-        publishToSseSubscribers(realtimeEvent);
+        realtimeEvents.tryEmitNext(realtimeEvent);
         return realtimeEvent;
     }
 
@@ -59,26 +54,16 @@ public class RealtimeEventService {
         return new RealtimePollResponse(nextCursor, events);
     }
 
-    public SseEmitter stream(String tenantId, String workspaceId, long since) {
-        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
-        SseSubscription subscription = new SseSubscription(tenantId, workspaceId, emitter);
-        sseSubscriptions.add(subscription);
-
-        emitter.onCompletion(() -> sseSubscriptions.remove(subscription));
-        emitter.onTimeout(() -> {
-            sseSubscriptions.remove(subscription);
-            emitter.complete();
-        });
-        emitter.onError(error -> sseSubscriptions.remove(subscription));
-
-        for (RealtimeEvent event : eventsSince(tenantId, workspaceId, since)) {
-            if (!send(emitter, event)) {
-                sseSubscriptions.remove(subscription);
-                break;
-            }
-        }
-
-        return emitter;
+    public Flux<ServerSentEvent<RealtimeEvent>> stream(String tenantId, String workspaceId, long since) {
+        long normalizedSince = Math.max(0, since);
+        return Flux.defer(() -> Flux.fromIterable(eventsSince(tenantId, workspaceId, normalizedSince))
+                        .mergeWith(realtimeEvents.asFlux()
+                                .filter(event -> event.version() > normalizedSince)
+                                .filter(event -> matches(event, tenantId, workspaceId))))
+                .map(event -> ServerSentEvent.<RealtimeEvent>builder(event)
+                        .id(Long.toString(event.version()))
+                        .event("realtime-event")
+                        .build());
     }
 
     private List<RealtimeEvent> eventsSince(String tenantId, String workspaceId, long since) {
@@ -91,37 +76,11 @@ public class RealtimeEventService {
         }
     }
 
-    private void publishToSseSubscribers(RealtimeEvent event) {
-        List<SseSubscription> failedSubscriptions = new ArrayList<>();
-        for (SseSubscription subscription : sseSubscriptions) {
-            if (matches(event, subscription.tenantId(), subscription.workspaceId())
-                    && !send(subscription.emitter(), event)) {
-                failedSubscriptions.add(subscription);
-            }
-        }
-        sseSubscriptions.removeAll(failedSubscriptions);
-    }
-
     private boolean matches(RealtimeEvent event, String tenantId, String workspaceId) {
         if (!event.tenantId().equals(tenantId)) {
             return false;
         }
         return event.workspaceId() == null || event.workspaceId().equals(workspaceId);
-    }
-
-    private boolean send(SseEmitter emitter, RealtimeEvent event) {
-        try {
-            synchronized (emitter) {
-                emitter.send(SseEmitter.event()
-                        .id(Long.toString(event.version()))
-                        .name("realtime-event")
-                        .data(event));
-            }
-            return true;
-        } catch (IOException | IllegalStateException exception) {
-            emitter.completeWithError(exception);
-            return false;
-        }
     }
 
     public record RealtimeEvent(
@@ -139,8 +98,5 @@ public class RealtimeEventService {
     }
 
     public record RealtimePollResponse(long nextCursor, List<RealtimeEvent> events) {
-    }
-
-    private record SseSubscription(String tenantId, String workspaceId, SseEmitter emitter) {
     }
 }
