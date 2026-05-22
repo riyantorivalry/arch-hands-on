@@ -19,12 +19,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Background worker for processing outbox events.
@@ -85,72 +85,83 @@ public class OutboxEventProcessor {
      * Publishes events to external systems and marks them as published.
      */
     @Scheduled(fixedDelay = 5000) // 5 seconds
-    @Transactional
     public void processOutboxEvents() {
-        List<OutboxEvent> events = outboxRepository.findEventsForRetry(maxRetries);
+        processOutboxEventsReactive()
+                .subscribe(
+                        ignored -> {
+                        },
+                        exception -> LOGGER.error("Outbox processing failed", exception)
+                );
+    }
 
-        if (events.isEmpty()) {
-            return;
-        }
+    Mono<Void> processOutboxEventsReactive() {
+        AtomicInteger processed = new AtomicInteger();
+        AtomicInteger failed = new AtomicInteger();
 
-        LOGGER.debug("Processing {} outbox events", events.size());
-
-        int processed = 0;
-        int failed = 0;
-
-        for (OutboxEvent outboxEvent : events) {
-            try {
-                // Deserialize event
-                DomainEvent domainEvent = deserializeEvent(outboxEvent);
-
-                // Publish to local listeners without routing back through DomainEventPublisher.
-                applicationEventPublisher.publishEvent(domainEvent);
-
-                // Mark as published
-                outboxEvent.markAsPublished();
-                outboxRepository.save(outboxEvent);
-
-                processed++;
-                LOGGER.debug("Published outbox event: {} ({})",
-                           outboxEvent.getEventType(), outboxEvent.getEventId());
-
-            } catch (Exception e) {
-                outboxEvent.recordRetry(e.getMessage());
-                outboxRepository.save(outboxEvent);
-
-                failed++;
-                LOGGER.warn("Failed to publish outbox event: {} (attempt {}/{}) - {}",
-                          outboxEvent.getEventId(),
-                          outboxEvent.getRetryCount(),
-                          maxRetries,
-                          e.getMessage());
-            }
-
-            // Process in batches to avoid long-running transactions
-            if ((processed + failed) >= batchSize) {
-                break;
-            }
-        }
-
-        if (processed > 0 || failed > 0) {
-            LOGGER.info("Outbox processing complete: {} published, {} failed, {} remaining",
-                       processed, failed, outboxRepository.countUnpublishedEvents());
-        }
+        return outboxRepository.findEventsForRetry(maxRetries)
+                .take(batchSize)
+                .concatMap(outboxEvent -> publishOutboxEvent(outboxEvent)
+                        .doOnSuccess(ignored -> processed.incrementAndGet())
+                        .onErrorResume(exception -> recordFailure(outboxEvent, exception)
+                                .doOnSuccess(ignored -> failed.incrementAndGet())))
+                .then(outboxRepository.countUnpublishedEvents())
+                .doOnNext(remaining -> {
+                    if (processed.get() > 0 || failed.get() > 0) {
+                        LOGGER.info("Outbox processing complete: {} published, {} failed, {} remaining",
+                                processed.get(), failed.get(), remaining);
+                    }
+                })
+                .then();
     }
 
     /**
      * Clean up old published events daily.
      */
     @Scheduled(cron = "0 0 2 * * ?") // Daily at 2 AM
-    @Transactional
     public void cleanupOldEvents() {
-        Instant cutoff = Instant.now().minusSeconds(cleanupDays * 24 * 60 * 60L);
-        List<OutboxEvent> oldEvents = outboxRepository.findPublishedEventsBefore(cutoff);
+        cleanupOldEventsReactive()
+                .subscribe(
+                        ignored -> {
+                        },
+                        exception -> LOGGER.warn("Outbox cleanup failed", exception)
+                );
+    }
 
-        if (!oldEvents.isEmpty()) {
-            outboxRepository.deleteAll(oldEvents);
-            LOGGER.info("Cleaned up {} old published events", oldEvents.size());
-        }
+    Mono<Void> cleanupOldEventsReactive() {
+        Instant cutoff = Instant.now().minusSeconds(cleanupDays * 24 * 60 * 60L);
+        return outboxRepository.findPublishedEventsBefore(cutoff)
+                .collectList()
+                .flatMap(oldEvents -> {
+                    if (oldEvents.isEmpty()) {
+                        return Mono.empty();
+                    }
+                    return outboxRepository.deleteAll(oldEvents)
+                            .doOnSuccess(ignored -> LOGGER.info("Cleaned up {} old published events", oldEvents.size()));
+                });
+    }
+
+    private Mono<Void> publishOutboxEvent(OutboxEvent outboxEvent) {
+        return Mono.fromCallable(() -> {
+                    DomainEvent domainEvent = deserializeEvent(outboxEvent);
+                    applicationEventPublisher.publishEvent(domainEvent);
+                    outboxEvent.markAsPublished();
+                    return outboxEvent;
+                })
+                .flatMap(event -> outboxRepository.markPublished(event.getEventId(), event.getPublishedAt()))
+                .doOnSuccess(updated -> LOGGER.debug("Published outbox event: {} ({})",
+                        outboxEvent.getEventType(), outboxEvent.getEventId()))
+                .then();
+    }
+
+    private Mono<Void> recordFailure(OutboxEvent outboxEvent, Throwable exception) {
+        outboxEvent.recordRetry(exception.getMessage());
+        return outboxRepository.recordFailure(outboxEvent.getEventId(), outboxEvent.getRetryCount(), outboxEvent.getLastError())
+                .doOnSuccess(updated -> LOGGER.warn("Failed to publish outbox event: {} (attempt {}/{}) - {}",
+                        outboxEvent.getEventId(),
+                        outboxEvent.getRetryCount(),
+                        maxRetries,
+                        exception.getMessage()))
+                .then();
     }
 
     /**

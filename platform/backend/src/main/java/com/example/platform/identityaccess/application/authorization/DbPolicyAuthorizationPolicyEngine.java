@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 @Component
 public class DbPolicyAuthorizationPolicyEngine implements AuthorizationPolicyEngine {
@@ -29,6 +30,21 @@ public class DbPolicyAuthorizationPolicyEngine implements AuthorizationPolicyEng
 
     @Override
     public AuthorizationDecision decide(MembershipEntity membership, AuthorizationDecisionRequest request) {
+        throw new UnsupportedOperationException("db-policy authorization is reactive-only; use decideReactive");
+    }
+
+    @Override
+    public Mono<AuthorizationDecision> decideReactive(MembershipEntity membership, AuthorizationDecisionRequest request) {
+        return ruleRepository.findByEnabledTrueOrderByPriorityAscRuleIdAsc()
+                .collectList()
+                .map(rules -> decideFromRules(membership, request, rules));
+    }
+
+    private AuthorizationDecision decideFromRules(
+            MembershipEntity membership,
+            AuthorizationDecisionRequest request,
+            List<AuthorizationPolicyRuleEntity> rules
+    ) {
         String action = requireAction(request.action());
         if (membership.getStatus() != MembershipStatus.ACTIVE) {
             return decision(membership, request, action, false, "Membership is not active", List.of("db.deny.inactive_membership"));
@@ -37,7 +53,7 @@ public class DbPolicyAuthorizationPolicyEngine implements AuthorizationPolicyEng
             return decision(membership, request, action, false, "Resource tenant does not match actor tenant", List.of("db.deny.cross_tenant_resource"));
         }
 
-        for (AuthorizationPolicyRuleEntity rule : ruleRepository.findByEnabledTrueOrderByPriorityAscRuleIdAsc()) {
+        for (AuthorizationPolicyRuleEntity rule : rules) {
             if (matches(rule, membership, request, action)) {
                 boolean allowed = ALLOW.equals(rule.getEffect());
                 String reason = allowed

@@ -1,29 +1,24 @@
 package com.example.platform.identityaccess.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "users")
+@Table("users")
 public class UserEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "user_id", nullable = false, length = 64)
+    @Column("user_id")
     private String userId;
 
-    @Column(name = "email", nullable = false, unique = true, length = 255)
+    @Column("email")
     private String email;
 
-    @Column(name = "display_name", nullable = false, length = 120)
+    @Column("display_name")
     private String displayName;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 32)
+    @Column("status")
     private UserStatus status;
 
     protected UserEntity() {
@@ -50,5 +45,10 @@ public class UserEntity extends AbstractAuditableEntity {
 
     public UserStatus getStatus() {
         return status;
+    }
+
+    @Override
+    public Object getId() {
+        return userId;
     }
 }

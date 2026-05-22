@@ -2,59 +2,52 @@ package com.example.platform.analytics.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
 import com.fasterxml.jackson.databind.JsonNode;
-import jakarta.persistence.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
 /**
  * Analytics event entity for capturing user behavior and system metrics.
  * Phase 3: Stores events for analytics dashboards and reporting.
  */
-@Entity
-@Table(name = "analytics_events", indexes = {
-        @Index(name = "idx_analytics_events_tenant", columnList = "tenant_id"),
-        @Index(name = "idx_analytics_events_user", columnList = "user_id"),
-        @Index(name = "idx_analytics_events_type", columnList = "event_type"),
-        @Index(name = "idx_analytics_events_timestamp", columnList = "created_at")
-})
+@Table("analytics_events")
 public class AnalyticsEventEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "event_id", nullable = false, length = 64)
+    @Column("event_id")
     private String eventId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
+    @Column("tenant_id")
     private String tenantId;
 
-    @Column(name = "user_id", length = 64)
+    @Column("user_id")
     private String userId;
 
-    @Column(name = "workspace_id", length = 64)
+    @Column("workspace_id")
     private String workspaceId;
 
-    @Column(name = "event_type", nullable = false, length = 100)
+    @Column("event_type")
     private String eventType;
 
-    @Column(name = "event_category", nullable = false, length = 50)
+    @Column("event_category")
     private String eventCategory;
 
-    @Column(name = "resource_type", length = 50)
+    @Column("resource_type")
     private String resourceType;
 
-    @Column(name = "resource_id", length = 64)
+    @Column("resource_id")
     private String resourceId;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "event_data", columnDefinition = "jsonb", nullable = false)
+    @Column("event_data")
     private JsonNode eventData; // JSON serialized event properties
 
-    @Column(name = "session_id", length = 64)
+    @Column("session_id")
     private String sessionId;
 
-    @Column(name = "user_agent", length = 500)
+    @Column("user_agent")
     private String userAgent;
 
-    @Column(name = "ip_address", length = 45)
+    @Column("ip_address")
     private String ipAddress;
 
     protected AnalyticsEventEntity() {
@@ -101,4 +94,9 @@ public class AnalyticsEventEntity extends AbstractAuditableEntity {
     public String getSessionId() { return sessionId; }
     public String getUserAgent() { return userAgent; }
     public String getIpAddress() { return ipAddress; }
+
+    @Override
+    public Object getId() {
+        return eventId;
+    }
 }

@@ -1,9 +1,9 @@
 package com.example.platform.common.domain;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import jakarta.persistence.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.Instant;
 
@@ -11,46 +11,43 @@ import java.time.Instant;
  * Outbox event entity for reliable event publishing.
  * Phase 2: Stores events in database before publishing to prevent event loss.
  */
-@Entity
-@Table(name = "outbox_events")
+@Table("outbox_events")
 public class OutboxEvent {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "event_id", nullable = false, unique = true)
+    @Column("event_id")
     private String eventId;
 
-    @Column(name = "event_type", nullable = false)
+    @Column("event_type")
     private String eventType;
 
-    @Column(name = "aggregate_type", nullable = false)
+    @Column("aggregate_type")
     private String aggregateType;
 
-    @Column(name = "aggregate_id", nullable = false)
+    @Column("aggregate_id")
     private String aggregateId;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column("tenant_id")
     private String tenantId;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "event_data", columnDefinition = "jsonb", nullable = false)
+    @Column("event_data")
     private JsonNode eventData; // JSON serialized event (stored as jsonb in Postgres)
 
-    @Column(name = "created_at", nullable = false)
+    @Column("created_at")
     private Instant createdAt;
 
-    @Column(name = "published_at")
+    @Column("published_at")
     private Instant publishedAt;
 
-    @Column(name = "published", nullable = false)
+    @Column("published")
     private boolean published = false;
 
-    @Column(name = "retry_count", nullable = false)
+    @Column("retry_count")
     private int retryCount = 0;
 
-    @Column(name = "last_error")
+    @Column("last_error")
     private String lastError;
 
     // Constructors

@@ -1,29 +1,24 @@
 package com.example.platform.tenantmanagement.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "tenants")
+@Table("tenants")
 public class TenantEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "tenant_id", nullable = false, length = 64)
+    @Column("tenant_id")
     private String tenantId;
 
-    @Column(name = "name", nullable = false, length = 120)
+    @Column("name")
     private String name;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 32)
+    @Column("status")
     private TenantStatus status;
 
-    @Column(name = "plan_code", nullable = false, length = 32)
+    @Column("plan_code")
     private String planCode;
 
     protected TenantEntity() {
@@ -50,5 +45,10 @@ public class TenantEntity extends AbstractAuditableEntity {
 
     public String getPlanCode() {
         return planCode;
+    }
+
+    @Override
+    public Object getId() {
+        return tenantId;
     }
 }

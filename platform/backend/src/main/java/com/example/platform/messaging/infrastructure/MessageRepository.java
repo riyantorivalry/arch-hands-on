@@ -1,13 +1,26 @@
 package com.example.platform.messaging.infrastructure;
 
 import com.example.platform.messaging.domain.MessageEntity;
-import java.util.List;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.r2dbc.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Flux;
 
-public interface MessageRepository extends JpaRepository<MessageEntity, String> {
+public interface MessageRepository extends ReactiveCrudRepository<MessageEntity, String> {
 
-    List<MessageEntity> findByChannelIdOrderByCreatedAtAsc(String channelId);
+    Flux<MessageEntity> findByChannelIdOrderByCreatedAtAsc(String channelId);
 
-    List<MessageEntity> findByChannelIdOrderByCreatedAtAsc(String channelId, Pageable pageable);
+    @Query("""
+            select *
+            from messages
+            where channel_id = :channelId
+            order by created_at asc
+            limit :limit
+            offset :offset
+            """)
+    Flux<MessageEntity> findByChannelIdOrderByCreatedAtAsc(
+            @Param("channelId") String channelId,
+            @Param("limit") int limit,
+            @Param("offset") long offset
+    );
 }

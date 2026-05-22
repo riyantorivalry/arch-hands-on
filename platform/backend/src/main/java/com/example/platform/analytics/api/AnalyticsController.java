@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api")
@@ -25,32 +26,39 @@ public class AnalyticsController {
     }
 
     @GetMapping("/v1/tenants/{tenantId}/analytics/events")
-    public List<AnalyticsEventView> listPostgresJsonbEvents(
+    public Mono<List<AnalyticsEventView>> listPostgresJsonbEvents(
             @PathVariable String tenantId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant start,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant end
     ) {
-        requireSameTenant(tenantId);
-        TimeRange range = normalizeRange(start, end);
-        return analyticsService.getPostgresJsonbEventsForTenant(tenantId, range.start(), range.end());
+        return requireSameTenant(tenantId)
+                .then(Mono.defer(() -> {
+                    TimeRange range = normalizeRange(start, end);
+                    return analyticsService.getPostgresJsonbEventsForTenant(tenantId, range.start(), range.end());
+                }));
     }
 
     @GetMapping("/v2/tenants/{tenantId}/analytics/events")
-    public List<AnalyticsEventView> listMongoEvents(
+    public Mono<List<AnalyticsEventView>> listMongoEvents(
             @PathVariable String tenantId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant start,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant end
     ) {
-        requireSameTenant(tenantId);
-        TimeRange range = normalizeRange(start, end);
-        return analyticsService.getMongoEventsForTenant(tenantId, range.start(), range.end());
+        return requireSameTenant(tenantId)
+                .then(Mono.defer(() -> {
+                    TimeRange range = normalizeRange(start, end);
+                    return analyticsService.getMongoEventsForTenant(tenantId, range.start(), range.end());
+                }));
     }
 
-    private void requireSameTenant(String tenantId) {
-        String currentTenantId = RequestContexts.authenticated().tenantId();
-        if (!tenantId.equals(currentTenantId)) {
-            throw new AuthorizationDeniedException("Actor is not allowed to read analytics for tenant " + tenantId);
-        }
+    private Mono<Void> requireSameTenant(String tenantId) {
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> {
+                    if (!tenantId.equals(context.tenantId())) {
+                        return Mono.error(new AuthorizationDeniedException("Actor is not allowed to read analytics for tenant " + tenantId));
+                    }
+                    return Mono.empty();
+                });
     }
 
     private TimeRange normalizeRange(Instant start, Instant end) {

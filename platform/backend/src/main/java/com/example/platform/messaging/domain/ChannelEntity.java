@@ -1,29 +1,24 @@
 package com.example.platform.messaging.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "channels", indexes = {
-        @Index(name = "idx_channel_workspace", columnList = "workspace_id")
-})
+@Table("channels")
 public class ChannelEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "channel_id", nullable = false, length = 64)
+    @Column("channel_id")
     private String channelId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
+    @Column("tenant_id")
     private String tenantId;
 
-    @Column(name = "workspace_id", nullable = false, length = 64)
+    @Column("workspace_id")
     private String workspaceId;
 
-    @Column(name = "name", nullable = false, length = 120)
+    @Column("name")
     private String name;
 
     protected ChannelEntity() {
@@ -50,5 +45,10 @@ public class ChannelEntity extends AbstractAuditableEntity {
 
     public String getName() {
         return name;
+    }
+
+    @Override
+    public Object getId() {
+        return channelId;
     }
 }

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @Validated
 @RestController
@@ -27,58 +28,58 @@ public class IdentityAccessController {
     }
 
     @PostMapping("/auth/login")
-    public LoginResponse login(@RequestBody LoginRequest request) {
-        var session = sessionAuthenticationService.login(request.userId(), request.workspaceId());
-        return new LoginResponse(
-                session.token(),
-                session.userId(),
-                session.tenantId(),
-                session.workspaceId(),
-                session.expiresAt().toString()
-        );
+    public Mono<LoginResponse> login(@RequestBody LoginRequest request) {
+        return sessionAuthenticationService.login(request.userId(), request.workspaceId())
+                .map(session -> new LoginResponse(
+                        session.token(),
+                        session.userId(),
+                        session.tenantId(),
+                        session.workspaceId(),
+                        session.expiresAt().toString()
+                ));
     }
 
     @PostMapping("/auth/logout")
-    public LogoutResponse logout(@org.springframework.web.bind.annotation.RequestHeader("Authorization") String authorization) {
-        sessionAuthenticationService.logout(extractToken(authorization));
-        return new LogoutResponse("logged-out");
+    public Mono<LogoutResponse> logout(@org.springframework.web.bind.annotation.RequestHeader("Authorization") String authorization) {
+        return sessionAuthenticationService.logout(extractToken(authorization))
+                .thenReturn(new LogoutResponse("logged-out"));
     }
 
     @GetMapping("/me")
-    public MeResponse me() {
-        var context = RequestContexts.authenticated();
-        var actor = facade.getCurrentActor(context.workspaceId(), context.userId());
-        return new MeResponse(
-                actor.userId(),
-                actor.displayName(),
-                actor.email(),
-                actor.workspaceId(),
-                actor.tenantId(),
-                actor.workspaceRole()
-        );
+    public Mono<MeResponse> me() {
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> facade.getCurrentActor(context.workspaceId(), context.userId()))
+                .map(actor -> new MeResponse(
+                        actor.userId(),
+                        actor.displayName(),
+                        actor.email(),
+                        actor.workspaceId(),
+                        actor.tenantId(),
+                        actor.workspaceRole()
+                ));
     }
 
     @GetMapping("/workspaces/{workspaceId}/memberships/me")
-    public MembershipResponse membership(@PathVariable String workspaceId) {
-        var context = RequestContexts.authenticated();
-        var actor = facade.getCurrentActor(workspaceId, context.userId());
-        return new MembershipResponse(actor.userId(), actor.workspaceId(), actor.tenantId(), actor.workspaceRole());
+    public Mono<MembershipResponse> membership(@PathVariable String workspaceId) {
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> facade.getCurrentActor(workspaceId, context.userId()))
+                .map(actor -> new MembershipResponse(actor.userId(), actor.workspaceId(), actor.tenantId(), actor.workspaceRole()));
     }
 
     @PostMapping("/workspaces/{workspaceId}/memberships")
-    public IdentityAccessFacade.MembershipAssignmentView assignMembership(
+    public Mono<IdentityAccessFacade.MembershipAssignmentView> assignMembership(
             @PathVariable String workspaceId,
             @RequestBody AssignMembershipRequest request
     ) {
-        var context = RequestContexts.authenticated();
-        return facade.assignMembership(
-                context.userId(),
-                workspaceId,
-                request.userId(),
-                request.email(),
-                request.displayName(),
-                request.role()
-        );
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> facade.assignMembership(
+                        context.userId(),
+                        workspaceId,
+                        request.userId(),
+                        request.email(),
+                        request.displayName(),
+                        request.role()
+                ));
     }
 
     public record LoginRequest(@NotBlank String userId, @NotBlank String workspaceId) {

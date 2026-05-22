@@ -1,10 +1,10 @@
 package com.example.platform.identityaccess.infrastructure;
 
 import com.example.platform.identityaccess.domain.UserSessionEntity;
-import java.util.Optional;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Mono;
 
-public interface UserSessionRepository extends JpaRepository<UserSessionEntity, String> {
+public interface UserSessionRepository extends ReactiveCrudRepository<UserSessionEntity, String> {
 
-    Optional<UserSessionEntity> findBySessionToken(String sessionToken);
+    Mono<UserSessionEntity> findBySessionToken(String sessionToken);
 }

@@ -1,7 +1,7 @@
 package com.example.platform.common.audit;
 
 import com.example.platform.common.web.RequestContext;
-import com.example.platform.common.web.RequestContexts;
+import com.example.platform.common.web.RequestContextHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -12,7 +12,8 @@ public class AuditLogger {
     private static final Logger LOGGER = LoggerFactory.getLogger(AuditLogger.class);
 
     public void logWrite(String module, String action, String resourceType, String resourceId, String outcome) {
-        RequestContext context = RequestContexts.current();
+        RequestContext context = RequestContextHolder.get()
+                .orElse(new RequestContext(null, null, null, null));
         LOGGER.info(
                 "audit module={} action={} resourceType={} resourceId={} outcome={} correlationId={} tenantId={} workspaceId={} userId={}",
                 module,

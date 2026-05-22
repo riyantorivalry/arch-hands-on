@@ -39,27 +39,25 @@ public class TenantContextFilter implements WebFilter, Ordered {
         }
 
         String correlationId = readHeader(exchange, CORRELATION_HEADER, UUID.randomUUID().toString());
-        RequestContext context;
-        try {
-            context = resolveContext(exchange, correlationId);
-        } catch (AuthenticationRequiredException exception) {
-            return writeUnauthorized(exchange, exception);
-        }
-
-        exchange.getResponse().getHeaders().set(CORRELATION_HEADER, correlationId);
-        RequestContextHolder.set(context);
-        MDC.put("correlationId", context.correlationId());
-        MDC.put("tenantId", valueOrDash(context.tenantId()));
-        MDC.put("workspaceId", valueOrDash(context.workspaceId()));
-        MDC.put("userId", valueOrDash(context.userId()));
-        return chain.filter(exchange)
-                .doFinally(signalType -> {
-                    MDC.remove("correlationId");
-                    MDC.remove("tenantId");
-                    MDC.remove("workspaceId");
-                    MDC.remove("userId");
-                    RequestContextHolder.clear();
-                });
+        return resolveContext(exchange, correlationId)
+                .flatMap(context -> {
+                    exchange.getResponse().getHeaders().set(CORRELATION_HEADER, correlationId);
+                    RequestContextHolder.set(context);
+                    MDC.put("correlationId", context.correlationId());
+                    MDC.put("tenantId", valueOrDash(context.tenantId()));
+                    MDC.put("workspaceId", valueOrDash(context.workspaceId()));
+                    MDC.put("userId", valueOrDash(context.userId()));
+                    return chain.filter(exchange)
+                            .contextWrite(reactorContext -> reactorContext.put(RequestContextHolder.REACTOR_CONTEXT_KEY, context))
+                            .doFinally(signalType -> {
+                                MDC.remove("correlationId");
+                                MDC.remove("tenantId");
+                                MDC.remove("workspaceId");
+                                MDC.remove("userId");
+                                RequestContextHolder.clear();
+                            });
+                })
+                .onErrorResume(AuthenticationRequiredException.class, exception -> writeUnauthorized(exchange, exception));
     }
 
     private boolean shouldNotFilter(ServerWebExchange exchange) {
@@ -72,15 +70,15 @@ public class TenantContextFilter implements WebFilter, Ordered {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private RequestContext resolveContext(ServerWebExchange exchange, String correlationId) {
+    private Mono<RequestContext> resolveContext(ServerWebExchange exchange, String correlationId) {
         String path = exchange.getRequest().getPath().pathWithinApplication().value();
         if (isPublicEndpoint(path)) {
-            return new RequestContext(null, null, null, correlationId);
+            return Mono.just(new RequestContext(null, null, null, correlationId));
         }
 
         String authorization = exchange.getRequest().getHeaders().getFirst(AUTHORIZATION_HEADER);
         if (authorization == null || authorization.isBlank() || !authorization.startsWith("Bearer ")) {
-            throw new AuthenticationRequiredException("Bearer token is required");
+            return Mono.error(new AuthenticationRequiredException("Bearer token is required"));
         }
         String token = authorization.substring("Bearer ".length()).trim();
         return sessionAuthenticationService.authenticate(token, correlationId);

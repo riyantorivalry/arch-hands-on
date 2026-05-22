@@ -5,7 +5,7 @@ import com.example.platform.documents.infrastructure.DocumentRepository;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 @Service
 public class PostgresIlikeDocumentSearch implements DocumentSearchUseCase {
@@ -27,11 +27,15 @@ public class PostgresIlikeDocumentSearch implements DocumentSearchUseCase {
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public List<DocumentSearchResult> search(String workspaceId, String query, Pageable pageable) {
-        return documentRepository.searchByWorkspaceIdAndQuery(workspaceId, query, pageable).stream()
+    public Mono<List<DocumentSearchResult>> search(String workspaceId, String query, Pageable pageable) {
+        return documentRepository.searchByWorkspaceIdAndQuery(
+                        workspaceId,
+                        query,
+                        pageable.getPageSize(),
+                        pageable.getOffset()
+                )
                 .map(this::toResult)
-                .toList();
+                .collectList();
     }
 
     private DocumentSearchResult toResult(DocumentEntity document) {

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @Validated
 @RestController
@@ -35,12 +36,12 @@ public class RealtimeEventsController {
     }
 
     @GetMapping("/v1/workspaces/{workspaceId}/events")
-    public RealtimePollResponse pollEvents(
+    public Mono<RealtimePollResponse> pollEvents(
             @PathVariable String workspaceId,
             @RequestParam(defaultValue = "0") long since
     ) {
-        MembershipEntity membership = requireActiveMembership(workspaceId);
-        return realtimeEventService.poll(membership.getTenantId(), workspaceId, since);
+        return requireActiveMembership(workspaceId)
+                .map(membership -> realtimeEventService.poll(membership.getTenantId(), workspaceId, since));
     }
 
     @GetMapping(path = "/v2/workspaces/{workspaceId}/events/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -48,17 +49,19 @@ public class RealtimeEventsController {
             @PathVariable String workspaceId,
             @RequestParam(defaultValue = "0") long since
     ) {
-        MembershipEntity membership = requireActiveMembership(workspaceId);
-        return realtimeEventService.stream(membership.getTenantId(), workspaceId, since);
+        return requireActiveMembership(workspaceId)
+                .flatMapMany(membership -> realtimeEventService.stream(membership.getTenantId(), workspaceId, since));
     }
 
-    private MembershipEntity requireActiveMembership(String workspaceId) {
-        String userId = RequestContexts.authenticated().userId();
-        MembershipEntity membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new AuthorizationDeniedException("User is not a member of workspace " + workspaceId));
-        if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new IllegalStateException("Membership is not active for user " + userId);
-        }
-        return membership;
+    private Mono<MembershipEntity> requireActiveMembership(String workspaceId) {
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> membershipRepository.findByWorkspaceIdAndUserId(workspaceId, context.userId())
+                        .switchIfEmpty(Mono.error(new AuthorizationDeniedException("User is not a member of workspace " + workspaceId)))
+                        .flatMap(membership -> {
+                            if (membership.getStatus() != MembershipStatus.ACTIVE) {
+                                return Mono.error(new IllegalStateException("Membership is not active for user " + context.userId()));
+                            }
+                            return Mono.just(membership);
+                        }));
     }
 }

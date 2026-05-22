@@ -1,36 +1,31 @@
 package com.example.platform.identityaccess.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 import java.time.Instant;
 
-@Entity
-@Table(name = "user_sessions")
+@Table("user_sessions")
 public class UserSessionEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "session_token", nullable = false, length = 128)
+    @Column("session_token")
     private String sessionToken;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
+    @Column("tenant_id")
     private String tenantId;
 
-    @Column(name = "workspace_id", nullable = false, length = 64)
+    @Column("workspace_id")
     private String workspaceId;
 
-    @Column(name = "user_id", nullable = false, length = 64)
+    @Column("user_id")
     private String userId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 32)
+    @Column("status")
     private SessionStatus status;
 
-    @Column(name = "expires_at", nullable = false)
+    @Column("expires_at")
     private Instant expiresAt;
 
     protected UserSessionEntity() {
@@ -78,5 +73,10 @@ public class UserSessionEntity extends AbstractAuditableEntity {
 
     public void revoke() {
         this.status = SessionStatus.REVOKED;
+    }
+
+    @Override
+    public Object getId() {
+        return sessionToken;
     }
 }

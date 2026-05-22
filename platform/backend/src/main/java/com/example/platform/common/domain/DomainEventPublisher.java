@@ -1,6 +1,8 @@
 package com.example.platform.common.domain;
 
 import java.util.List;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Platform-wide event bus for publishing domain events.
@@ -12,11 +14,15 @@ public interface DomainEventPublisher {
     /**
      * Publish a single domain event
      */
-    void publish(DomainEvent event);
+    Mono<Void> publish(DomainEvent event);
 
     /**
      * Publish multiple domain events (batched as a transaction commit)
      */
-    void publishAll(List<DomainEvent> events);
+    default Mono<Void> publishAll(List<DomainEvent> events) {
+        return Flux.fromIterable(events)
+                .concatMap(this::publish)
+                .then();
+    }
 }
 

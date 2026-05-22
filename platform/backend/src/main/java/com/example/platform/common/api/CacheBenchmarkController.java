@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/benchmarks/cache")
@@ -25,53 +26,71 @@ public class CacheBenchmarkController {
     }
 
     @GetMapping("/strategy")
-    public CacheStrategyResponse selectedStrategy() {
-        RequestContexts.authenticated();
-        return new CacheStrategyResponse(cacheService.mode());
+    public Mono<CacheStrategyResponse> selectedStrategy() {
+        return RequestContexts.authenticatedReactive()
+                .thenReturn(new CacheStrategyResponse(cacheService.mode()));
     }
 
     @PostMapping("/{strategy}/entries")
-    public CacheEntryResponse setEntry(
+    public Mono<CacheEntryResponse> setEntry(
             @PathVariable String strategy,
             @Valid @RequestBody CacheSetRequest request
     ) {
-        RequestContexts.authenticated();
-        CacheBackend backend = cacheService.backend(strategy);
-        if (request.ttlSeconds() == null) {
-            backend.set(request.key(), request.value());
-        } else {
-            backend.set(request.key(), request.value(), request.ttlSeconds());
-        }
-        Object value = backend.get(request.key());
-        return new CacheEntryResponse(backend.name(), request.key(), value != null, value, backend.getTtl(request.key()), Instant.now());
+        return RequestContexts.authenticatedReactive()
+                .then(Mono.defer(() -> {
+                    CacheBackend backend = cacheService.backend(strategy);
+                    Mono<Void> write = request.ttlSeconds() == null
+                            ? backend.set(request.key(), request.value())
+                            : backend.set(request.key(), request.value(), request.ttlSeconds());
+                    return write.then(responseFor(backend, request.key()));
+                }));
     }
 
     @GetMapping("/{strategy}/entries/{key}")
-    public CacheEntryResponse getEntry(@PathVariable String strategy, @PathVariable String key) {
-        RequestContexts.authenticated();
-        CacheBackend backend = cacheService.backend(strategy);
-        Object value = backend.get(key);
-        return new CacheEntryResponse(backend.name(), key, value != null, value, backend.getTtl(key), Instant.now());
+    public Mono<CacheEntryResponse> getEntry(@PathVariable String strategy, @PathVariable String key) {
+        return RequestContexts.authenticatedReactive()
+                .then(Mono.defer(() -> responseFor(cacheService.backend(strategy), key)));
     }
 
     @PostMapping("/{strategy}/counters/{key}/increment")
-    public CacheCounterResponse increment(
+    public Mono<CacheCounterResponse> increment(
             @PathVariable String strategy,
             @PathVariable String key,
             @Valid @RequestBody CacheIncrementRequest request
     ) {
-        RequestContexts.authenticated();
-        CacheBackend backend = cacheService.backend(strategy);
-        long value = backend.increment(key, request.ttlSeconds());
-        return new CacheCounterResponse(backend.name(), key, value, backend.getTtl(key), Instant.now());
+        return RequestContexts.authenticatedReactive()
+                .then(Mono.defer(() -> {
+                    CacheBackend backend = cacheService.backend(strategy);
+                    return backend.increment(key, request.ttlSeconds())
+                            .zipWith(backend.getTtl(key))
+                            .map(tuple -> new CacheCounterResponse(backend.name(), key, tuple.getT1(), tuple.getT2(), Instant.now()));
+                }));
     }
 
     @DeleteMapping("/{strategy}/entries/{key}")
-    public CacheEntryResponse deleteEntry(@PathVariable String strategy, @PathVariable String key) {
-        RequestContexts.authenticated();
-        CacheBackend backend = cacheService.backend(strategy);
-        backend.delete(key);
-        return new CacheEntryResponse(backend.name(), key, false, null, backend.getTtl(key), Instant.now());
+    public Mono<CacheEntryResponse> deleteEntry(@PathVariable String strategy, @PathVariable String key) {
+        return RequestContexts.authenticatedReactive()
+                .then(Mono.defer(() -> {
+                    CacheBackend backend = cacheService.backend(strategy);
+                    return backend.delete(key)
+                            .then(backend.getTtl(key))
+                            .map(ttl -> new CacheEntryResponse(backend.name(), key, false, null, ttl, Instant.now()));
+                }));
+    }
+
+    private Mono<CacheEntryResponse> responseFor(CacheBackend backend, String key) {
+        return backend.get(key)
+                .map(value -> new CacheEntryResponse(backend.name(), key, true, value, -1, Instant.now()))
+                .defaultIfEmpty(new CacheEntryResponse(backend.name(), key, false, null, -1, Instant.now()))
+                .flatMap(response -> backend.getTtl(key)
+                        .map(ttl -> new CacheEntryResponse(
+                                response.strategy(),
+                                response.key(),
+                                response.hit(),
+                                response.value(),
+                                ttl,
+                                response.observedAt()
+                        )));
     }
 
     public record CacheStrategyResponse(String selectedStrategy) {

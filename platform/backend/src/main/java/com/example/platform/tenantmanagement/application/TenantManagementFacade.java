@@ -23,6 +23,7 @@ import java.text.Normalizer;
 import java.util.Locale;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 @Service
 public class TenantManagementFacade {
@@ -53,94 +54,95 @@ public class TenantManagementFacade {
         this.authorizationService = authorizationService;
     }
 
-    @Transactional
-    public TenantView createTenant(String tenantName, String workspaceName, String ownerUserId, String ownerEmail, String ownerDisplayName) {
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<TenantView> createTenant(String tenantName, String workspaceName, String ownerUserId, String ownerEmail, String ownerDisplayName) {
         String tenantId = "tenant-" + slugify(tenantName);
         String workspaceId = "workspace-" + slugify(workspaceName);
 
-        if (tenantRepository.existsById(tenantId)) {
-            throw new IllegalStateException("Tenant already exists: " + tenantId);
-        }
-
-        tenantRepository.save(new TenantEntity(tenantId, tenantName, TenantStatus.ACTIVE, "STANDARD"));
-        workspaceRepository.save(new WorkspaceEntity(workspaceId, tenantId, workspaceName, WorkspaceStatus.ACTIVE));
-        workspaceSettingsRepository.save(defaultSettings(workspaceId, tenantId));
-
-        UserEntity user = userRepository.findById(ownerUserId)
-                .orElseGet(() -> userRepository.save(new UserEntity(ownerUserId, ownerEmail, ownerDisplayName, UserStatus.ACTIVE)));
-        membershipRepository.findByWorkspaceIdAndUserId(workspaceId, user.getUserId())
-                .orElseGet(() -> membershipRepository.save(
-                        new MembershipEntity(tenantId, workspaceId, user.getUserId(), MembershipRole.OWNER, MembershipStatus.ACTIVE)
-                ));
-
-        // Publish domain event
-        domainEventPublisher.publish(new TenantCreatedEvent(tenantId, tenantName, workspaceId, workspaceName));
-
-        return new TenantView(tenantId, workspaceId, tenantName, workspaceName, TenantStatus.ACTIVE.name());
+        return tenantRepository.existsById(tenantId)
+                .flatMap(exists -> {
+                    if (exists) {
+                        return Mono.error(new IllegalStateException("Tenant already exists: " + tenantId));
+                    }
+                    return tenantRepository.save(new TenantEntity(tenantId, tenantName, TenantStatus.ACTIVE, "STANDARD"))
+                            .then(workspaceRepository.save(new WorkspaceEntity(workspaceId, tenantId, workspaceName, WorkspaceStatus.ACTIVE)))
+                            .then(workspaceSettingsRepository.save(defaultSettings(workspaceId, tenantId)))
+                            .then(userRepository.findById(ownerUserId)
+                                    .switchIfEmpty(userRepository.save(new UserEntity(ownerUserId, ownerEmail, ownerDisplayName, UserStatus.ACTIVE))))
+                            .flatMap(user -> membershipRepository.findByWorkspaceIdAndUserId(workspaceId, user.getUserId())
+                                    .switchIfEmpty(membershipRepository.save(
+                                            new MembershipEntity(tenantId, workspaceId, user.getUserId(), MembershipRole.OWNER, MembershipStatus.ACTIVE)
+                                    )))
+                            .flatMap(membership -> domainEventPublisher.publish(new TenantCreatedEvent(tenantId, tenantName, workspaceId, workspaceName)))
+                            .thenReturn(new TenantView(tenantId, workspaceId, tenantName, workspaceName, TenantStatus.ACTIVE.name()));
+                });
     }
 
-    @Transactional
-    public WorkspaceView createWorkspace(String tenantId, String actorWorkspaceId, String actorUserId, String workspaceName) {
-        tenantRepository.findById(tenantId)
-                .orElseThrow(() -> new IllegalArgumentException("Tenant not found: " + tenantId));
-
-        MembershipEntity actorMembership = requireActiveMembership(actorWorkspaceId, actorUserId);
-        if (!tenantId.equals(actorMembership.getTenantId())) {
-            throw new AuthorizationDeniedException("Actor cannot create workspaces for another tenant");
-        }
-        authorizationService.requireWorkspaceManager(actorMembership);
-
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<WorkspaceView> createWorkspace(String tenantId, String actorWorkspaceId, String actorUserId, String workspaceName) {
         String workspaceId = "workspace-" + slugify(workspaceName);
-        if (workspaceRepository.existsById(workspaceId)) {
-            throw new IllegalStateException("Workspace already exists: " + workspaceId);
-        }
-
-        WorkspaceEntity workspace = workspaceRepository.save(new WorkspaceEntity(
-                workspaceId,
-                tenantId,
-                workspaceName,
-                WorkspaceStatus.ACTIVE
-        ));
-        workspaceSettingsRepository.save(defaultSettings(workspaceId, tenantId));
-
-        membershipRepository.save(new MembershipEntity(
-                tenantId,
-                workspaceId,
-                actorUserId,
-                MembershipRole.OWNER,
-                MembershipStatus.ACTIVE
-        ));
-
-        return toWorkspaceView(workspace);
+        return tenantRepository.findById(tenantId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Tenant not found: " + tenantId)))
+                .then(requireActiveMembership(actorWorkspaceId, actorUserId))
+                .flatMap(actorMembership -> {
+                    if (!tenantId.equals(actorMembership.getTenantId())) {
+                        return Mono.error(new AuthorizationDeniedException("Actor cannot create workspaces for another tenant"));
+                    }
+                    return authorizationService.requireWorkspaceManager(actorMembership)
+                            .then(workspaceRepository.existsById(workspaceId))
+                            .flatMap(exists -> {
+                                if (exists) {
+                                    return Mono.error(new IllegalStateException("Workspace already exists: " + workspaceId));
+                                }
+                                return workspaceRepository.save(new WorkspaceEntity(
+                                                workspaceId,
+                                                tenantId,
+                                                workspaceName,
+                                                WorkspaceStatus.ACTIVE
+                                        ))
+                                        .flatMap(workspace -> workspaceSettingsRepository.save(defaultSettings(workspaceId, tenantId))
+                                                .then(membershipRepository.save(new MembershipEntity(
+                                                        tenantId,
+                                                        workspaceId,
+                                                        actorUserId,
+                                                        MembershipRole.OWNER,
+                                                        MembershipStatus.ACTIVE
+                                                )))
+                                                .thenReturn(toWorkspaceView(workspace)));
+                            });
+                });
     }
 
-    @Transactional(readOnly = true)
-    public WorkspaceView getWorkspace(String workspaceId, String actorUserId) {
-        requireActiveMembership(workspaceId, actorUserId);
-        var workspace = workspaceRepository.findById(workspaceId)
-                .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
-        return toWorkspaceView(workspace);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<WorkspaceView> getWorkspace(String workspaceId, String actorUserId) {
+        return requireActiveMembership(workspaceId, actorUserId)
+                .then(workspaceRepository.findById(workspaceId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Workspace not found: " + workspaceId))))
+                .map(this::toWorkspaceView);
     }
 
-    @Transactional
-    public WorkspaceSettingsView updateWorkspaceSettings(
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<WorkspaceSettingsView> updateWorkspaceSettings(
             String workspaceId,
             String actorUserId,
             String defaultDocumentStatus,
             Boolean taskAutoAssignEnabled,
             Integer messageRetentionDays
     ) {
-        MembershipEntity membership = requireActiveMembership(workspaceId, actorUserId);
-        authorizationService.requireWorkspaceManager(membership);
-
-        WorkspaceSettingsEntity settings = workspaceSettingsRepository.findByWorkspaceIdAndTenantId(workspaceId, membership.getTenantId())
-                .orElseGet(() -> workspaceSettingsRepository.save(defaultSettings(workspaceId, membership.getTenantId())));
-        settings.update(
-                normalizeDefaultDocumentStatus(defaultDocumentStatus, settings.getDefaultDocumentStatus()),
-                taskAutoAssignEnabled == null ? settings.isTaskAutoAssignEnabled() : taskAutoAssignEnabled,
-                normalizeRetention(messageRetentionDays, settings.getMessageRetentionDays())
-        );
-        return toWorkspaceSettingsView(settings);
+        return requireActiveMembership(workspaceId, actorUserId)
+                .flatMap(membership -> {
+                    return authorizationService.requireWorkspaceManager(membership)
+                            .then(workspaceSettingsRepository.findByWorkspaceIdAndTenantId(workspaceId, membership.getTenantId()))
+                            .switchIfEmpty(workspaceSettingsRepository.save(defaultSettings(workspaceId, membership.getTenantId())))
+                            .flatMap(settings -> {
+                                settings.update(
+                                        normalizeDefaultDocumentStatus(defaultDocumentStatus, settings.getDefaultDocumentStatus()),
+                                        taskAutoAssignEnabled == null ? settings.isTaskAutoAssignEnabled() : taskAutoAssignEnabled,
+                                        normalizeRetention(messageRetentionDays, settings.getMessageRetentionDays())
+                                );
+                                return workspaceSettingsRepository.save(settings).map(this::toWorkspaceSettingsView);
+                            });
+                });
     }
 
     public record TenantView(String tenantId, String workspaceId, String tenantName, String workspaceName, String status) {
@@ -158,13 +160,15 @@ public class TenantManagementFacade {
     ) {
     }
 
-    private MembershipEntity requireActiveMembership(String workspaceId, String userId) {
-        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new AuthorizationDeniedException("User is not a member of workspace " + workspaceId));
-        if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new IllegalStateException("Membership is not active for user " + userId);
-        }
-        return membership;
+    private Mono<MembershipEntity> requireActiveMembership(String workspaceId, String userId) {
+        return membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                .switchIfEmpty(Mono.error(new AuthorizationDeniedException("User is not a member of workspace " + workspaceId)))
+                .flatMap(membership -> {
+                    if (membership.getStatus() != MembershipStatus.ACTIVE) {
+                        return Mono.error(new IllegalStateException("Membership is not active for user " + userId));
+                    }
+                    return Mono.just(membership);
+                });
     }
 
     private WorkspaceSettingsEntity defaultSettings(String workspaceId, String tenantId) {

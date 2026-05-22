@@ -1,10 +1,10 @@
 package com.example.platform.identityaccess.infrastructure;
 
 import com.example.platform.identityaccess.domain.MembershipEntity;
-import java.util.Optional;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Mono;
 
-public interface MembershipRepository extends JpaRepository<MembershipEntity, Long> {
+public interface MembershipRepository extends ReactiveCrudRepository<MembershipEntity, Long> {
 
-    Optional<MembershipEntity> findByWorkspaceIdAndUserId(String workspaceId, String userId);
+    Mono<MembershipEntity> findByWorkspaceIdAndUserId(String workspaceId, String userId);
 }

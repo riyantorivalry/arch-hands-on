@@ -1,10 +1,10 @@
 package com.example.platform.documents.infrastructure;
 
 import com.example.platform.documents.domain.DocumentCommentEntity;
-import java.util.List;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Flux;
 
-public interface DocumentCommentRepository extends JpaRepository<DocumentCommentEntity, String> {
+public interface DocumentCommentRepository extends ReactiveCrudRepository<DocumentCommentEntity, String> {
 
-    List<DocumentCommentEntity> findByDocumentIdOrderByCreatedAtAsc(String documentId);
+    Flux<DocumentCommentEntity> findByDocumentIdOrderByCreatedAtAsc(String documentId);
 }

@@ -1,13 +1,26 @@
 package com.example.platform.tasks.infrastructure;
 
 import com.example.platform.tasks.domain.TaskEntity;
-import java.util.List;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.r2dbc.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Flux;
 
-public interface TaskRepository extends JpaRepository<TaskEntity, String> {
+public interface TaskRepository extends ReactiveCrudRepository<TaskEntity, String> {
 
-    List<TaskEntity> findByWorkspaceIdOrderByUpdatedAtDesc(String workspaceId);
+    Flux<TaskEntity> findByWorkspaceIdOrderByUpdatedAtDesc(String workspaceId);
 
-    List<TaskEntity> findByWorkspaceIdOrderByUpdatedAtDesc(String workspaceId, Pageable pageable);
+    @Query("""
+            select *
+            from tasks
+            where workspace_id = :workspaceId
+            order by updated_at desc
+            limit :limit
+            offset :offset
+            """)
+    Flux<TaskEntity> findByWorkspaceIdOrderByUpdatedAtDesc(
+            @Param("workspaceId") String workspaceId,
+            @Param("limit") int limit,
+            @Param("offset") long offset
+    );
 }

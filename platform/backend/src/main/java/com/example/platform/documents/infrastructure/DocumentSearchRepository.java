@@ -2,24 +2,21 @@ package com.example.platform.documents.infrastructure;
 
 import com.example.platform.documents.domain.DocumentSearchDocument;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PreDestroy;
-import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.opensearch.client.Request;
-import org.opensearch.client.Response;
-import org.opensearch.client.ResponseException;
-import org.opensearch.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.Pageable;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
+import org.springframework.web.reactive.function.client.ClientResponse;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 @Repository
 public class DocumentSearchRepository {
@@ -27,41 +24,33 @@ public class DocumentSearchRepository {
     private static final Logger log = LoggerFactory.getLogger(DocumentSearchRepository.class);
     private static final String INDEX_NAME = "documents";
 
-    private final ObjectMapper objectMapper;
-    private final RestClient restClient;
+    private final WebClient webClient;
 
     private volatile boolean indexEnsured;
 
     public DocumentSearchRepository(
-            ObjectMapper objectMapper,
+            WebClient.Builder webClientBuilder,
             @Value("${spring.data.elasticsearch.uris:http://localhost:9200}") String uris,
             @Value("${platform.search.opensearch.connect-timeout:500ms}") Duration connectTimeout,
             @Value("${platform.search.opensearch.socket-timeout:1s}") Duration socketTimeout
     ) {
-        this.objectMapper = objectMapper;
-        this.restClient = RestClient.builder(org.apache.http.HttpHost.create(firstUri(uris)))
-                .setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
-                        .setConnectTimeout(Math.toIntExact(connectTimeout.toMillis()))
-                        .setSocketTimeout(Math.toIntExact(socketTimeout.toMillis())))
+        this.webClient = webClientBuilder
+                .baseUrl(firstUri(uris))
                 .build();
     }
 
-    public void save(DocumentSearchDocument document) {
-        try {
-            ensureIndex();
-
-            Request request = new Request("PUT", "/" + INDEX_NAME + "/_doc/" + document.getDocumentId());
-            request.addParameter("refresh", "wait_for");
-            request.setJsonEntity(objectMapper.writeValueAsString(toSource(document)));
-            restClient.performRequest(request);
-        } catch (ResponseException exception) {
-            throw new IllegalStateException("Failed to index document in OpenSearch: " + responseDetails(exception), exception);
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to index document in OpenSearch", exception);
-        }
+    public Mono<Void> save(DocumentSearchDocument document) {
+        return ensureIndex()
+                .then(webClient.put()
+                        .uri("/" + INDEX_NAME + "/_doc/{id}?refresh=wait_for", document.getDocumentId())
+                        .bodyValue(toSource(document))
+                        .retrieve()
+                        .bodyToMono(JsonNode.class))
+                .then()
+                .onErrorMap(exception -> new IllegalStateException("Failed to index document in OpenSearch", exception));
     }
 
-    public List<DocumentSearchDocument> findByWorkspaceIdAndTitleContainsOrContentContains(
+    public Mono<List<DocumentSearchDocument>> findByWorkspaceIdAndTitleContainsOrContentContains(
             String workspaceId, String titleQuery, String contentQuery
     ) {
         return findByWorkspaceIdAndTitleContainsOrContentContains(
@@ -72,7 +61,7 @@ public class DocumentSearchRepository {
         );
     }
 
-    public List<DocumentSearchDocument> findByWorkspaceIdAndTitleContainsOrContentContains(
+    public Mono<List<DocumentSearchDocument>> findByWorkspaceIdAndTitleContainsOrContentContains(
             String workspaceId, String titleQuery, String contentQuery, Pageable pageable
     ) {
         String query = titleQuery == null || titleQuery.isBlank() ? contentQuery : titleQuery;
@@ -101,7 +90,7 @@ public class DocumentSearchRepository {
         return search(payload);
     }
 
-    public List<DocumentSearchDocument> findByWorkspaceId(String workspaceId) {
+    public Mono<List<DocumentSearchDocument>> findByWorkspaceId(String workspaceId) {
         return search(Map.of(
                 "size", 100,
                 "query", Map.of(
@@ -110,7 +99,7 @@ public class DocumentSearchRepository {
         ));
     }
 
-    public List<DocumentSearchDocument> findByTenantId(String tenantId) {
+    public Mono<List<DocumentSearchDocument>> findByTenantId(String tenantId) {
         return search(Map.of(
                 "size", 100,
                 "query", Map.of(
@@ -119,86 +108,88 @@ public class DocumentSearchRepository {
         ));
     }
 
-    @PreDestroy
-    void close() throws IOException {
-        restClient.close();
+    private Mono<List<DocumentSearchDocument>> search(Map<String, Object> payload) {
+        return ensureIndex()
+                .then(webClient.post()
+                        .uri("/" + INDEX_NAME + "/_search")
+                        .bodyValue(payload)
+                        .retrieve()
+                        .bodyToMono(JsonNode.class))
+                .map(this::toDocuments)
+                .onErrorMap(exception -> new IllegalStateException("Failed to search documents in OpenSearch", exception));
     }
 
-    private List<DocumentSearchDocument> search(Map<String, Object> payload) {
-        try {
-            ensureIndex();
-
-            Request request = new Request("POST", "/" + INDEX_NAME + "/_search");
-            request.setJsonEntity(objectMapper.writeValueAsString(payload));
-            Response response = restClient.performRequest(request);
-            JsonNode root = objectMapper.readTree(response.getEntity().getContent());
-            JsonNode hits = root.path("hits").path("hits");
-
-            List<DocumentSearchDocument> results = new ArrayList<>();
-            for (JsonNode hit : hits) {
-                JsonNode source = hit.path("_source");
-                results.add(new DocumentSearchDocument(
-                        source.path("documentId").asText(),
-                        source.path("tenantId").asText(),
-                        source.path("workspaceId").asText(),
-                        source.path("title").asText(),
-                        source.path("content").asText(),
-                        source.path("status").asText(),
-                        source.path("createdByUserId").asText(),
-                        source.path("lastModifiedByUserId").asText(),
-                        readInstant(source, "createdAt"),
-                        readInstant(source, "updatedAt")
-                ));
-            }
-            return results;
-        } catch (ResponseException exception) {
-            throw new IllegalStateException("Failed to search documents in OpenSearch: " + responseDetails(exception), exception);
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to search documents in OpenSearch", exception);
-        }
-    }
-
-    private synchronized void ensureIndex() throws IOException {
+    private Mono<Void> ensureIndex() {
         if (indexEnsured) {
-            return;
+            return Mono.empty();
         }
 
-        try {
-            restClient.performRequest(new Request("HEAD", "/" + INDEX_NAME));
-            indexEnsured = true;
-            return;
-        } catch (ResponseException exception) {
-            if (exception.getResponse().getStatusLine().getStatusCode() != 404) {
-                throw exception;
-            }
-        }
-
-        Request request = new Request("PUT", "/" + INDEX_NAME);
-        request.setJsonEntity("""
-                {
-                  "settings": {
-                    "number_of_shards": 1,
-                    "number_of_replicas": 0
-                  },
-                  "mappings": {
-                    "properties": {
-                      "documentId": { "type": "keyword" },
-                      "tenantId": { "type": "keyword" },
-                      "workspaceId": { "type": "keyword" },
-                      "title": { "type": "text" },
-                      "content": { "type": "text" },
-                      "status": { "type": "keyword" },
-                      "createdByUserId": { "type": "keyword" },
-                      "lastModifiedByUserId": { "type": "keyword" },
-                      "createdAt": { "type": "date" },
-                      "updatedAt": { "type": "date" }
+        return webClient.head()
+                .uri("/" + INDEX_NAME)
+                .exchangeToMono(response -> {
+                    if (response.statusCode().is2xxSuccessful()) {
+                        indexEnsured = true;
+                        return Mono.empty();
                     }
-                  }
-                }
-                """);
-        restClient.performRequest(request);
-        indexEnsured = true;
-        log.info("Created OpenSearch index '{}'", INDEX_NAME);
+                    if (response.statusCode() == HttpStatus.NOT_FOUND) {
+                        return createIndex();
+                    }
+                    return error(response, "Failed to inspect OpenSearch index");
+                });
+    }
+
+    private Mono<Void> createIndex() {
+        return webClient.put()
+                .uri("/" + INDEX_NAME)
+                .bodyValue(Map.of(
+                        "settings", Map.of(
+                                "number_of_shards", 1,
+                                "number_of_replicas", 0
+                        ),
+                        "mappings", Map.of(
+                                "properties", Map.ofEntries(
+                                        Map.entry("documentId", Map.of("type", "keyword")),
+                                        Map.entry("tenantId", Map.of("type", "keyword")),
+                                        Map.entry("workspaceId", Map.of("type", "keyword")),
+                                        Map.entry("title", Map.of("type", "text")),
+                                        Map.entry("content", Map.of("type", "text")),
+                                        Map.entry("status", Map.of("type", "keyword")),
+                                        Map.entry("createdByUserId", Map.of("type", "keyword")),
+                                        Map.entry("lastModifiedByUserId", Map.of("type", "keyword")),
+                                        Map.entry("createdAt", Map.of("type", "date")),
+                                        Map.entry("updatedAt", Map.of("type", "date"))
+                                )
+                        )
+                ))
+                .exchangeToMono(response -> {
+                    if (response.statusCode().is2xxSuccessful()) {
+                        indexEnsured = true;
+                        log.info("Created OpenSearch index '{}'", INDEX_NAME);
+                        return Mono.empty();
+                    }
+                    return error(response, "Failed to create OpenSearch index");
+                });
+    }
+
+    private List<DocumentSearchDocument> toDocuments(JsonNode root) {
+        JsonNode hits = root.path("hits").path("hits");
+        List<DocumentSearchDocument> results = new ArrayList<>();
+        for (JsonNode hit : hits) {
+            JsonNode source = hit.path("_source");
+            results.add(new DocumentSearchDocument(
+                    source.path("documentId").asText(),
+                    source.path("tenantId").asText(),
+                    source.path("workspaceId").asText(),
+                    source.path("title").asText(),
+                    source.path("content").asText(),
+                    source.path("status").asText(),
+                    source.path("createdByUserId").asText(),
+                    source.path("lastModifiedByUserId").asText(),
+                    readInstant(source, "createdAt"),
+                    readInstant(source, "updatedAt")
+            ));
+        }
+        return results;
     }
 
     private Map<String, Object> toSource(DocumentSearchDocument document) {
@@ -214,6 +205,12 @@ public class DocumentSearchRepository {
         source.put("createdAt", writeInstant(document.getCreatedAt()));
         source.put("updatedAt", writeInstant(document.getUpdatedAt()));
         return source;
+    }
+
+    private Mono<Void> error(ClientResponse response, String message) {
+        return response.bodyToMono(String.class)
+                .defaultIfEmpty("")
+                .flatMap(body -> Mono.error(new IllegalStateException(message + ": " + response.statusCode() + " " + body)));
     }
 
     private static String firstUri(String uris) {
@@ -233,9 +230,5 @@ public class DocumentSearchRepository {
 
     private static String writeInstant(Instant value) {
         return value == null ? null : value.toString();
-    }
-
-    private static String responseDetails(ResponseException exception) {
-        return exception.getResponse().getStatusLine() + " - " + exception.getMessage();
     }
 }

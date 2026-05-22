@@ -29,6 +29,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 @Service
 public class DocumentsFacade {
@@ -71,142 +72,140 @@ public class DocumentsFacade {
         this.documentSearchComparisonService = documentSearchComparisonService;
     }
 
-    @Transactional
-    public DocumentView createDocument(String workspaceId, String userId, String title, String content) {
-        var membership = requireActiveMembership(workspaceId, userId);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<DocumentView> createDocument(String workspaceId, String userId, String title, String content) {
         String normalizedTitle = requireText("Document title", title, MAX_TITLE_LENGTH);
         String normalizedContent = requireText("Document content", content, MAX_CONTENT_LENGTH);
-        DocumentEntity saved = documentRepository.save(new DocumentEntity(
-                "document-" + slugify(normalizedTitle) + "-" + UUID.randomUUID().toString().substring(0, 8),
-                membership.getTenantId(),
-                workspaceId,
-                normalizedTitle,
-                normalizedContent,
-                DocumentStatus.DRAFT,
-                userId,
-                userId
-        ));
-        auditLogger.logWrite("documents", "create", "document", saved.getDocumentId(), "SUCCESS");
-
-        // Index in OpenSearch for full-text search
-        indexDocument(saved, membership.getTenantId());
-
-        // Publish domain event
-        domainEventPublisher.publish(new DocumentCreatedEvent(
-                membership.getTenantId(),
-                saved.getDocumentId(),
-                workspaceId,
-                normalizedTitle,
-                userId
-        ));
-
-        return toDocumentView(saved);
+        return requireActiveMembership(workspaceId, userId)
+                .flatMap(membership -> documentRepository.save(new DocumentEntity(
+                                "document-" + slugify(normalizedTitle) + "-" + UUID.randomUUID().toString().substring(0, 8),
+                                membership.getTenantId(),
+                                workspaceId,
+                                normalizedTitle,
+                                normalizedContent,
+                                DocumentStatus.DRAFT,
+                                userId,
+                                userId
+                        ))
+                        .flatMap(saved -> {
+                            auditLogger.logWrite("documents", "create", "document", saved.getDocumentId(), "SUCCESS");
+                            return indexDocument(saved, membership.getTenantId())
+                                    .then(domainEventPublisher.publish(new DocumentCreatedEvent(
+                                            membership.getTenantId(),
+                                            saved.getDocumentId(),
+                                            workspaceId,
+                                            normalizedTitle,
+                                            userId
+                                    )))
+                                    .thenReturn(saved);
+                        })
+                        .map(this::toDocumentView));
     }
 
-    @Transactional(readOnly = true)
-    public List<DocumentView> listDocuments(String workspaceId) {
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<List<DocumentView>> listDocuments(String workspaceId) {
         return listDocuments(workspaceId, null, 0, DEFAULT_PAGE_SIZE);
     }
 
-    @Transactional(readOnly = true)
-    public List<DocumentView> listDocuments(String workspaceId, String userId, int page, int size) {
-        if (userId != null) {
-            requireActiveMembership(workspaceId, userId);
-        }
-        return documentRepository.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId, pageRequest(page, size)).stream()
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<List<DocumentView>> listDocuments(String workspaceId, String userId, int page, int size) {
+        Mono<Void> authorized = userId == null ? Mono.empty() : requireActiveMembership(workspaceId, userId).then();
+        Pageable pageable = pageRequest(page, size);
+        return authorized.thenMany(documentRepository.findByWorkspaceIdOrderByUpdatedAtDesc(
+                        workspaceId,
+                        pageable.getPageSize(),
+                        pageable.getOffset()
+                ))
                 .map(this::toDocumentView)
-                .toList();
+                .collectList();
     }
 
-    public List<DocumentView> searchDocuments(String workspaceId, String query) {
+    public Mono<List<DocumentView>> searchDocuments(String workspaceId, String query) {
         return searchDocuments(workspaceId, null, query, 0, DEFAULT_PAGE_SIZE);
     }
 
-    public List<DocumentView> searchDocuments(String workspaceId, String userId, String query, int page, int size) {
-        if (userId != null) {
-            requireActiveMembership(workspaceId, userId);
-        }
+    public Mono<List<DocumentView>> searchDocuments(String workspaceId, String userId, String query, int page, int size) {
+        Mono<Void> authorized = userId == null ? Mono.empty() : requireActiveMembership(workspaceId, userId).then();
         Pageable pageable = pageRequest(page, size);
-        List<DocumentView> results = documentSearchComparisonService.search("v3", workspaceId, query, pageable).stream()
-                .map(this::toDocumentView)
-                .toList();
-        analyticsService.trackSearch(query, results.size());
-        return results;
+        return authorized.then(documentSearchComparisonService.search("v3", workspaceId, query, pageable))
+                .map(results -> results.stream().map(this::toDocumentView).toList())
+                .flatMap(results -> analyticsService.trackSearch(query, results.size()).thenReturn(results));
     }
 
-    public List<DocumentView> searchDocumentsVersion(String version, String workspaceId, String userId, String query, int page, int size) {
-        requireActiveMembership(workspaceId, userId);
-        List<DocumentView> results = documentSearchComparisonService.search(version, workspaceId, query, pageRequest(page, size)).stream()
-                .map(this::toDocumentView)
-                .toList();
-        analyticsService.trackSearch(query, results.size());
-        return results;
+    public Mono<List<DocumentView>> searchDocumentsVersion(String version, String workspaceId, String userId, String query, int page, int size) {
+        return requireActiveMembership(workspaceId, userId)
+                .then(documentSearchComparisonService.search(version, workspaceId, query, pageRequest(page, size)))
+                .map(results -> results.stream().map(this::toDocumentView).toList())
+                .flatMap(results -> analyticsService.trackSearch(query, results.size()).thenReturn(results));
     }
 
-    @Transactional(readOnly = true)
-    public DocumentView getDocument(String documentId) {
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<DocumentView> getDocument(String documentId) {
         return getDocument(documentId, null);
     }
 
-    @Transactional(readOnly = true)
-    public DocumentView getDocument(String documentId, String userId) {
-        DocumentEntity document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
-        if (userId != null) {
-            requireActiveMembership(document.getWorkspaceId(), userId);
-        }
-        return toDocumentView(document);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<DocumentView> getDocument(String documentId, String userId) {
+        return documentRepository.findById(documentId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Document not found: " + documentId)))
+                .flatMap(document -> {
+                    Mono<Void> authorized = userId == null ? Mono.empty() : requireActiveMembership(document.getWorkspaceId(), userId).then();
+                    return authorized.thenReturn(toDocumentView(document));
+                });
     }
 
-    @Transactional
-    public DocumentView updateDocument(String documentId, String userId, String title, String content, String status) {
-        DocumentEntity document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
-        var membership = requireActiveMembership(document.getWorkspaceId(), userId);
-        authorizationService.requireOwnerOrAdminOrResourceOwner(membership, document.getCreatedByUserId());
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<DocumentView> updateDocument(String documentId, String userId, String title, String content, String status) {
         String normalizedTitle = requireText("Document title", title, MAX_TITLE_LENGTH);
         String normalizedContent = requireText("Document content", content, MAX_CONTENT_LENGTH);
-        DocumentStatus nextStatus = parseStatus(status, document.getStatus());
-        boolean workspaceManager = isWorkspaceManager(membership);
-
-        requireDocumentTransition(document, nextStatus, workspaceManager);
-        requireDocumentEditRules(document, normalizedTitle, normalizedContent, nextStatus, workspaceManager);
-
-        document.update(normalizedTitle, normalizedContent, nextStatus, userId);
-        auditLogger.logWrite("documents", "update", "document", document.getDocumentId(), "SUCCESS");
-
-        // Update index in OpenSearch
-        indexDocument(document, membership.getTenantId());
-
-        // Publish domain event
-        domainEventPublisher.publish(new DocumentUpdatedEvent(
-                membership.getTenantId(),
-                document.getDocumentId(),
-                document.getWorkspaceId(),
-                normalizedTitle,
-                userId
-        ));
-
-        return toDocumentView(document);
+        return documentRepository.findById(documentId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Document not found: " + documentId)))
+                .flatMap(document -> requireActiveMembership(document.getWorkspaceId(), userId)
+                        .flatMap(membership -> {
+                            return authorizationService.requireOwnerOrAdminOrResourceOwner(membership, document.getCreatedByUserId())
+                                    .then(Mono.defer(() -> {
+                                        DocumentStatus nextStatus = parseStatus(status, document.getStatus());
+                                        boolean workspaceManager = isWorkspaceManager(membership);
+                                        requireDocumentTransition(document, nextStatus, workspaceManager);
+                                        requireDocumentEditRules(document, normalizedTitle, normalizedContent, nextStatus, workspaceManager);
+                                        document.update(normalizedTitle, normalizedContent, nextStatus, userId);
+                                        return documentRepository.save(document)
+                                                .flatMap(saved -> {
+                                        auditLogger.logWrite("documents", "update", "document", saved.getDocumentId(), "SUCCESS");
+                                                    return indexDocument(saved, membership.getTenantId())
+                                                            .then(domainEventPublisher.publish(new DocumentUpdatedEvent(
+                                                                    membership.getTenantId(),
+                                                                    saved.getDocumentId(),
+                                                                    saved.getWorkspaceId(),
+                                                                    normalizedTitle,
+                                                                    userId
+                                                            )))
+                                                            .thenReturn(saved);
+                                                })
+                                                .map(this::toDocumentView);
+                                    }));
+                        }));
     }
 
-    @Transactional
-    public DocumentCommentView addComment(String documentId, String userId, String body) {
-        DocumentEntity document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new IllegalArgumentException("Document not found: " + documentId));
-        requireActiveMembership(document.getWorkspaceId(), userId);
-        if (document.getStatus() == DocumentStatus.ARCHIVED) {
-            throw new IllegalStateException("Archived documents are locked for comments");
-        }
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<DocumentCommentView> addComment(String documentId, String userId, String body) {
         String normalizedBody = requireText("Document comment", body, 4000);
-        DocumentCommentEntity saved = documentCommentRepository.save(new DocumentCommentEntity(
-                "comment-" + UUID.randomUUID(),
-                documentId,
-                userId,
-                normalizedBody
-        ));
-        auditLogger.logWrite("documents", "comment", "document", documentId, "SUCCESS");
-        return new DocumentCommentView(saved.getCommentId(), saved.getDocumentId(), saved.getAuthorUserId(), saved.getBody());
+        return documentRepository.findById(documentId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Document not found: " + documentId)))
+                .flatMap(document -> requireActiveMembership(document.getWorkspaceId(), userId)
+                        .then(Mono.defer(() -> {
+                            if (document.getStatus() == DocumentStatus.ARCHIVED) {
+                                return Mono.error(new IllegalStateException("Archived documents are locked for comments"));
+                            }
+                            return documentCommentRepository.save(new DocumentCommentEntity(
+                                    "comment-" + UUID.randomUUID(),
+                                    documentId,
+                                    userId,
+                                    normalizedBody
+                            ));
+                        })))
+                .doOnNext(saved -> auditLogger.logWrite("documents", "comment", "document", documentId, "SUCCESS"))
+                .map(saved -> new DocumentCommentView(saved.getCommentId(), saved.getDocumentId(), saved.getAuthorUserId(), saved.getBody()));
     }
 
     public record DocumentView(
@@ -256,18 +255,19 @@ public class DocumentsFacade {
         return slug.isBlank() ? "item" : slug;
     }
 
-    private MembershipEntity requireActiveMembership(String workspaceId, String userId) {
-        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new AuthorizationDeniedException("User is not a member of workspace " + workspaceId));
-        if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new IllegalStateException("Membership is not active for user " + userId);
-        }
-        return membership;
+    private Mono<MembershipEntity> requireActiveMembership(String workspaceId, String userId) {
+        return membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                .switchIfEmpty(Mono.error(new AuthorizationDeniedException("User is not a member of workspace " + workspaceId)))
+                .flatMap(membership -> {
+                    if (membership.getStatus() != MembershipStatus.ACTIVE) {
+                        return Mono.error(new IllegalStateException("Membership is not active for user " + userId));
+                    }
+                    return Mono.just(membership);
+                });
     }
 
-    private void indexDocument(DocumentEntity document, String tenantId) {
-        try {
-            var searchDoc = new com.example.platform.documents.domain.DocumentSearchDocument(
+    private Mono<Void> indexDocument(DocumentEntity document, String tenantId) {
+        var searchDoc = new com.example.platform.documents.domain.DocumentSearchDocument(
                     document.getDocumentId(),
                     tenantId,
                     document.getWorkspaceId(),
@@ -278,11 +278,12 @@ public class DocumentsFacade {
                     document.getLastModifiedByUserId(),
                     document.getCreatedAt(),
                     document.getUpdatedAt()
-            );
-            documentSearchRepository.save(searchDoc);
-        } catch (Exception e) {
-            auditLogger.logWrite("documents", "search_index", "document", document.getDocumentId(), "FAILED: " + e.getMessage());
-        }
+        );
+        return documentSearchRepository.save(searchDoc)
+                .onErrorResume(e -> {
+                    auditLogger.logWrite("documents", "search_index", "document", document.getDocumentId(), "FAILED: " + e.getMessage());
+                    return Mono.empty();
+                });
     }
 
     private DocumentStatus parseStatus(String status, DocumentStatus fallback) {

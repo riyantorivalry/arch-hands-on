@@ -6,6 +6,7 @@ import com.example.platform.identityaccess.application.authorization.Authorizati
 import com.example.platform.identityaccess.application.authorization.AuthorizationPolicyEngineService;
 import com.example.platform.identityaccess.domain.MembershipEntity;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 @Service
 public class AuthorizationService {
@@ -16,8 +17,8 @@ public class AuthorizationService {
         this.policyEngineService = policyEngineService;
     }
 
-    public void requireWorkspaceManager(MembershipEntity membership) {
-        requireAllowed(membership, new AuthorizationDecisionRequest(
+    public Mono<Void> requireWorkspaceManager(MembershipEntity membership) {
+        return requireAllowed(membership, new AuthorizationDecisionRequest(
                 "workspace:manage",
                 "workspace",
                 membership.getWorkspaceId(),
@@ -28,8 +29,8 @@ public class AuthorizationService {
         ), "Workspace manager role is required");
     }
 
-    public void requireOwnerOrAdminOrResourceOwner(MembershipEntity membership, String resourceOwnerUserId) {
-        requireAllowed(membership, new AuthorizationDecisionRequest(
+    public Mono<Void> requireOwnerOrAdminOrResourceOwner(MembershipEntity membership, String resourceOwnerUserId) {
+        return requireAllowed(membership, new AuthorizationDecisionRequest(
                 "document:update",
                 "document",
                 null,
@@ -40,12 +41,12 @@ public class AuthorizationService {
         ), "Actor is not allowed to modify this resource");
     }
 
-    public void requireOwnerOrAdminOrAssignee(
+    public Mono<Void> requireOwnerOrAdminOrAssignee(
             MembershipEntity membership,
             String resourceOwnerUserId,
             String assigneeUserId
     ) {
-        requireAllowed(membership, new AuthorizationDecisionRequest(
+        return requireAllowed(membership, new AuthorizationDecisionRequest(
                 "task:update",
                 "task",
                 null,
@@ -56,10 +57,10 @@ public class AuthorizationService {
         ), "Actor is not allowed to modify this task");
     }
 
-    private void requireAllowed(MembershipEntity membership, AuthorizationDecisionRequest request, String denialMessage) {
-        AuthorizationDecision decision = policyEngineService.decide(membership, request);
-        if (!decision.allowed()) {
-            throw new AuthorizationDeniedException(denialMessage);
-        }
+    private Mono<Void> requireAllowed(MembershipEntity membership, AuthorizationDecisionRequest request, String denialMessage) {
+        return policyEngineService.decideReactive(membership, request)
+                .flatMap(decision -> decision.allowed()
+                        ? Mono.empty()
+                        : Mono.error(new AuthorizationDeniedException(denialMessage)));
     }
 }

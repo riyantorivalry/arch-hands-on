@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 /**
  * Outbox pattern implementation for reliable event publishing.
@@ -46,52 +47,52 @@ public class OutboxDomainEventPublisher implements DomainEventPublisher {
     }
 
     @Override
-    @Transactional
-    public void publish(DomainEvent event) {
-        Timer.Sample sample = metricsCollector.startEventPublishingTimer();
-        try {
-            // Check if event already exists (idempotency)
-            if (outboxRepository.existsByEventId(event.getEventId())) {
-                LOGGER.debug("Event already exists in outbox, skipping: {}", event.getEventId());
-                return;
-            }
-
-            // Serialize event to JSON
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<Void> publish(DomainEvent event) {
+        return Mono.defer(() -> {
+            Timer.Sample sample = metricsCollector.startEventPublishingTimer();
             JsonNode eventData = objectMapper.valueToTree(event);
-
-            // Determine aggregate type from event class
             String aggregateType = determineAggregateType(event);
-
-            // Create outbox event
             OutboxEvent outboxEvent = new OutboxEvent(
-                event.getEventId(),
-                event.getEventType(),
-                aggregateType,
-                event.getAggregateId(),
-                event.getTenantId(),
-                eventData
+                    event.getEventId(),
+                    event.getEventType(),
+                    aggregateType,
+                    event.getAggregateId(),
+                    event.getTenantId(),
+                    eventData
             );
 
-            // Save to database (within transaction)
-            outboxRepository.save(outboxEvent);
-            metricsCollector.recordEventPublished();
-
-            LOGGER.info("Event stored in outbox: type={} id={} aggregate={}",
-                       event.getEventType(), event.getEventId(), event.getAggregateId());
-
-        } catch (Exception e) {
-            metricsCollector.recordEventFailed();
-            LOGGER.error("Failed to store event in outbox: {}", event.getEventType(), e);
-            throw new RuntimeException("Failed to store event in outbox", e);
-        } finally {
-            metricsCollector.stopEventPublishingTimer(sample);
-        }
-    }
-
-    @Override
-    @Transactional
-    public void publishAll(java.util.List<DomainEvent> events) {
-        events.forEach(this::publish);
+            return outboxRepository.existsByEventId(event.getEventId())
+                    .flatMap(exists -> {
+                        if (exists) {
+                            LOGGER.debug("Event already exists in outbox, skipping: {}", event.getEventId());
+                            return Mono.empty();
+                        }
+                        return outboxRepository.insertEvent(
+                                        outboxEvent.getEventId(),
+                                        outboxEvent.getEventType(),
+                                        outboxEvent.getAggregateType(),
+                                        outboxEvent.getAggregateId(),
+                                        outboxEvent.getTenantId(),
+                                        outboxEvent.getEventData().toString(),
+                                        outboxEvent.getCreatedAt(),
+                                        outboxEvent.isPublished(),
+                                        outboxEvent.getRetryCount()
+                                )
+                                .doOnSuccess(inserted -> {
+                                    metricsCollector.recordEventPublished();
+                                    LOGGER.info("Event stored in outbox: type={} id={} aggregate={}",
+                                            event.getEventType(), event.getEventId(), event.getAggregateId());
+                                })
+                                .then();
+                    })
+                    .doOnError(e -> {
+                        metricsCollector.recordEventFailed();
+                        LOGGER.error("Failed to store event in outbox: {}", event.getEventType(), e);
+                    })
+                    .onErrorMap(e -> new RuntimeException("Failed to store event in outbox", e))
+                    .doFinally(signalType -> metricsCollector.stopEventPublishingTimer(sample));
+        });
     }
 
     private String determineAggregateType(DomainEvent event) {

@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 @Component
 public class TokenBucketRateLimitAlgorithm implements RateLimitAlgorithm {
@@ -24,30 +25,34 @@ public class TokenBucketRateLimitAlgorithm implements RateLimitAlgorithm {
     }
 
     @Override
-    public synchronized RateLimitDecision check(String key, int limit, int windowSeconds) {
+    public Mono<RateLimitDecision> check(String key, int limit, int windowSeconds) {
         RateLimitInputs.validate(key, limit, windowSeconds);
         Instant now = Instant.now();
         long nowMillis = now.toEpochMilli();
         String cacheKey = RateLimitInputs.cacheKey(name(), key);
         double refillPerSecond = (double) limit / windowSeconds;
 
-        BucketState state = readState(cacheService.get(cacheKey), limit, nowMillis);
-        double elapsedSeconds = Math.max(0, nowMillis - state.lastRefillEpochMillis()) / 1000.0;
-        double tokens = Math.min(limit, state.tokens() + (elapsedSeconds * refillPerSecond));
+        return cacheService.get(cacheKey)
+                .map(value -> readState(value, limit, nowMillis))
+                .defaultIfEmpty(new BucketState(limit, nowMillis))
+                .flatMap(state -> {
+                    double elapsedSeconds = Math.max(0, nowMillis - state.lastRefillEpochMillis()) / 1000.0;
+                    double tokens = Math.min(limit, state.tokens() + (elapsedSeconds * refillPerSecond));
 
-        boolean allowed = tokens >= 1.0;
-        if (allowed) {
-            tokens -= 1.0;
-        }
+                    boolean allowed = tokens >= 1.0;
+                    if (allowed) {
+                        tokens -= 1.0;
+                    }
 
-        cacheService.set(cacheKey, state(tokens, nowMillis), Math.max(windowSeconds * 2L, 1L));
+                    long remaining = Math.max(0, (long) Math.floor(tokens));
+                    long secondsUntilNextToken = tokens >= 1.0 ? 0 : (long) Math.ceil((1.0 - tokens) / refillPerSecond);
+                    long secondsUntilFull = (long) Math.ceil(Math.max(0, limit - tokens) / refillPerSecond);
+                    long retryAfterSeconds = allowed ? 0 : Math.max(1, secondsUntilNextToken);
+                    RateLimitDecision decision = new RateLimitDecision(name(), key, allowed, limit, remaining, retryAfterSeconds, secondsUntilFull, now);
 
-        long remaining = Math.max(0, (long) Math.floor(tokens));
-        long secondsUntilNextToken = tokens >= 1.0 ? 0 : (long) Math.ceil((1.0 - tokens) / refillPerSecond);
-        long secondsUntilFull = (long) Math.ceil(Math.max(0, limit - tokens) / refillPerSecond);
-        long retryAfterSeconds = allowed ? 0 : Math.max(1, secondsUntilNextToken);
-
-        return new RateLimitDecision(name(), key, allowed, limit, remaining, retryAfterSeconds, secondsUntilFull, now);
+                    return cacheService.set(cacheKey, state(tokens, nowMillis), Math.max(windowSeconds * 2L, 1L))
+                            .thenReturn(decision);
+                });
     }
 
     private BucketState readState(Object value, int limit, long nowMillis) {

@@ -1,47 +1,42 @@
 package com.example.platform.identityaccess.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 import java.time.Instant;
 
-@Entity
-@Table(name = "authorization_policy_rules", indexes = {
-        @Index(name = "idx_authorization_policy_rules_enabled_priority", columnList = "enabled,priority")
-})
+@Table("authorization_policy_rules")
 public class AuthorizationPolicyRuleEntity {
 
     @Id
-    @Column(name = "rule_id", nullable = false, length = 96)
+    @Column("rule_id")
     private String ruleId;
 
-    @Column(name = "policy_id", nullable = false, length = 96)
+    @Column("policy_id")
     private String policyId;
 
-    @Column(name = "effect", nullable = false, length = 16)
+    @Column("effect")
     private String effect;
 
-    @Column(name = "role_name", nullable = false, length = 32)
+    @Column("role_name")
     private String roleName;
 
-    @Column(name = "action", nullable = false, length = 120)
+    @Column("action")
     private String action;
 
-    @Column(name = "resource_type", nullable = false, length = 64)
+    @Column("resource_type")
     private String resourceType;
 
-    @Column(name = "condition_type", nullable = false, length = 64)
+    @Column("condition_type")
     private String conditionType;
 
-    @Column(name = "priority", nullable = false)
+    @Column("priority")
     private int priority;
 
-    @Column(name = "enabled", nullable = false)
+    @Column("enabled")
     private boolean enabled;
 
-    @Column(name = "created_at", nullable = false)
+    @Column("created_at")
     private Instant createdAt;
 
     protected AuthorizationPolicyRuleEntity() {

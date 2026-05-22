@@ -1,38 +1,33 @@
 package com.example.platform.messaging.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "messages", indexes = {
-        @Index(name = "idx_message_channel", columnList = "channel_id,created_at")
-})
+@Table("messages")
 public class MessageEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "message_id", nullable = false, length = 64)
+    @Column("message_id")
     private String messageId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
+    @Column("tenant_id")
     private String tenantId;
 
-    @Column(name = "workspace_id", nullable = false, length = 64)
+    @Column("workspace_id")
     private String workspaceId;
 
-    @Column(name = "channel_id", nullable = false, length = 64)
+    @Column("channel_id")
     private String channelId;
 
-    @Column(name = "author_user_id", nullable = false, length = 64)
+    @Column("author_user_id")
     private String authorUserId;
 
-    @Column(name = "body", nullable = false, length = 4000)
+    @Column("body")
     private String body;
 
-    @Column(name = "parent_message_id", length = 64)
+    @Column("parent_message_id")
     private String parentMessageId;
 
     protected MessageEntity() {
@@ -82,5 +77,10 @@ public class MessageEntity extends AbstractAuditableEntity {
 
     public String getParentMessageId() {
         return parentMessageId;
+    }
+
+    @Override
+    public Object getId() {
+        return messageId;
     }
 }

@@ -26,6 +26,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 @Service
 public class TasksFacade {
@@ -58,145 +59,150 @@ public class TasksFacade {
         this.domainEventPublisher = domainEventPublisher;
     }
 
-    @Transactional
-    public TaskView createTask(String workspaceId, String userId, String title, String description, String assigneeUserId) {
-        var membership = requireActiveMembership(workspaceId, userId);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<TaskView> createTask(String workspaceId, String userId, String title, String description, String assigneeUserId) {
         String normalizedTitle = requireText("Task title", title, MAX_TITLE_LENGTH);
         String normalizedDescription = requireText("Task description", description, MAX_DESCRIPTION_LENGTH);
         String normalizedAssigneeUserId = blankToNull(assigneeUserId);
-        if (normalizedAssigneeUserId != null) {
-            requireActiveMembership(workspaceId, normalizedAssigneeUserId);
-        }
+        Mono<Void> assigneeCheck = normalizedAssigneeUserId == null ? Mono.empty() : requireActiveMembership(workspaceId, normalizedAssigneeUserId).then();
+        return requireActiveMembership(workspaceId, userId)
+                .flatMap(membership -> assigneeCheck.then(taskRepository.save(new TaskEntity(
+                                "task-" + slugify(normalizedTitle) + "-" + UUID.randomUUID().toString().substring(0, 8),
+                                membership.getTenantId(),
+                                workspaceId,
+                                normalizedTitle,
+                                normalizedDescription,
+                                TaskStatus.TODO,
+                                normalizedAssigneeUserId,
+                                userId,
+                                userId
+                        )))
+                        .flatMap(saved -> {
+                            auditLogger.logWrite("tasks", "create", "task", saved.getTaskId(), "SUCCESS");
+                            Mono<Void> published = domainEventPublisher.publish(new TaskCreatedEvent(
+                                    membership.getTenantId(),
+                                    saved.getTaskId(),
+                                    workspaceId,
+                                    normalizedTitle,
+                                    userId
+                            ));
 
-        TaskEntity saved = taskRepository.save(new TaskEntity(
-                "task-" + slugify(normalizedTitle) + "-" + UUID.randomUUID().toString().substring(0, 8),
-                membership.getTenantId(),
-                workspaceId,
-                normalizedTitle,
-                normalizedDescription,
-                TaskStatus.TODO,
-                normalizedAssigneeUserId,
-                userId,
-                userId
-        ));
-        auditLogger.logWrite("tasks", "create", "task", saved.getTaskId(), "SUCCESS");
-
-        // Publish domain events
-        domainEventPublisher.publish(new TaskCreatedEvent(
-                membership.getTenantId(),
-                saved.getTaskId(),
-                workspaceId,
-                normalizedTitle,
-                userId
-        ));
-
-        if (saved.getAssigneeUserId() != null) {
-            domainEventPublisher.publish(new TaskAssignedEvent(
-                    membership.getTenantId(),
-                    saved.getTaskId(),
-                    workspaceId,
-                    saved.getAssigneeUserId()
-            ));
-        }
-
-        return toTaskView(saved);
+                            if (saved.getAssigneeUserId() != null) {
+                                published = published.then(domainEventPublisher.publish(new TaskAssignedEvent(
+                                        membership.getTenantId(),
+                                        saved.getTaskId(),
+                                        workspaceId,
+                                        saved.getAssigneeUserId()
+                                )));
+                            }
+                            return published.thenReturn(saved);
+                        }))
+                .map(this::toTaskView);
     }
 
-    @Transactional(readOnly = true)
-    public List<TaskView> listTasks(String workspaceId) {
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<List<TaskView>> listTasks(String workspaceId) {
         return listTasks(workspaceId, null, 0, DEFAULT_PAGE_SIZE);
     }
 
-    @Transactional(readOnly = true)
-    public List<TaskView> listTasks(String workspaceId, String userId, int page, int size) {
-        if (userId != null) {
-            requireActiveMembership(workspaceId, userId);
-        }
-        return taskRepository.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId, pageRequest(page, size)).stream()
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<List<TaskView>> listTasks(String workspaceId, String userId, int page, int size) {
+        Mono<Void> authorized = userId == null ? Mono.empty() : requireActiveMembership(workspaceId, userId).then();
+        Pageable pageable = pageRequest(page, size);
+        return authorized.thenMany(taskRepository.findByWorkspaceIdOrderByUpdatedAtDesc(
+                        workspaceId,
+                        pageable.getPageSize(),
+                        pageable.getOffset()
+                ))
                 .map(this::toTaskView)
-                .toList();
+                .collectList();
     }
 
-    @Transactional(readOnly = true)
-    public TaskView getTask(String taskId) {
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<TaskView> getTask(String taskId) {
         return getTask(taskId, null);
     }
 
-    @Transactional(readOnly = true)
-    public TaskView getTask(String taskId, String userId) {
-        TaskEntity task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
-        if (userId != null) {
-            requireActiveMembership(task.getWorkspaceId(), userId);
-        }
-        return toTaskView(task);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<TaskView> getTask(String taskId, String userId) {
+        return taskRepository.findById(taskId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Task not found: " + taskId)))
+                .flatMap(task -> {
+                    Mono<Void> authorized = userId == null ? Mono.empty() : requireActiveMembership(task.getWorkspaceId(), userId).then();
+                    return authorized.thenReturn(toTaskView(task));
+                });
     }
 
-    @Transactional
-    public TaskView updateTask(String taskId, String userId, String title, String description, String status, String assigneeUserId) {
-        TaskEntity task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
-        var membership = requireActiveMembership(task.getWorkspaceId(), userId);
-        authorizationService.requireOwnerOrAdminOrAssignee(membership, task.getCreatedByUserId(), task.getAssigneeUserId());
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<TaskView> updateTask(String taskId, String userId, String title, String description, String status, String assigneeUserId) {
         String normalizedTitle = requireText("Task title", title, MAX_TITLE_LENGTH);
         String normalizedDescription = requireText("Task description", description, MAX_DESCRIPTION_LENGTH);
         String normalizedAssigneeUserId = blankToNull(assigneeUserId);
-        if (normalizedAssigneeUserId != null) {
-            requireActiveMembership(task.getWorkspaceId(), normalizedAssigneeUserId);
-        }
+        return taskRepository.findById(taskId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Task not found: " + taskId)))
+                .flatMap(task -> requireActiveMembership(task.getWorkspaceId(), userId)
+                        .flatMap(membership -> {
+                            Mono<Void> assigneeCheck = normalizedAssigneeUserId == null ? Mono.empty() : requireActiveMembership(task.getWorkspaceId(), normalizedAssigneeUserId).then();
+                            return authorizationService.requireOwnerOrAdminOrAssignee(membership, task.getCreatedByUserId(), task.getAssigneeUserId())
+                                    .then(assigneeCheck)
+                                    .then(Mono.defer(() -> {
+                                TaskStatus nextStatus = parseStatus(status);
+                                boolean workspaceManager = isWorkspaceManager(membership);
+                                String previousStatus = task.getStatus().name();
+                                String previousAssignee = task.getAssigneeUserId();
 
-        TaskStatus nextStatus = parseStatus(status);
-        boolean workspaceManager = isWorkspaceManager(membership);
-        String previousStatus = task.getStatus().name();
-        String previousAssignee = task.getAssigneeUserId();
+                                requireAssignmentRules(task, membership, normalizedAssigneeUserId, nextStatus, workspaceManager);
+                                requireTransition(task.getStatus(), nextStatus, workspaceManager);
+                                requireEditRules(task, membership, normalizedTitle, normalizedDescription, normalizedAssigneeUserId, nextStatus, workspaceManager);
 
-        requireAssignmentRules(task, membership, normalizedAssigneeUserId, nextStatus, workspaceManager);
-        requireTransition(task.getStatus(), nextStatus, workspaceManager);
-        requireEditRules(task, membership, normalizedTitle, normalizedDescription, normalizedAssigneeUserId, nextStatus, workspaceManager);
-
-        task.update(normalizedTitle, normalizedDescription, nextStatus, normalizedAssigneeUserId, userId);
-        auditLogger.logWrite("tasks", "update", "task", task.getTaskId(), "SUCCESS");
-
-        // Publish domain events
-        if (!previousStatus.equals(nextStatus.name())) {
-            domainEventPublisher.publish(new TaskStatusChangedEvent(
-                    membership.getTenantId(),
-                    task.getTaskId(),
-                    task.getWorkspaceId(),
-                    previousStatus,
-                    nextStatus.name()
-            ));
-        }
-
-        if (!java.util.Objects.equals(previousAssignee, task.getAssigneeUserId()) && task.getAssigneeUserId() != null) {
-            domainEventPublisher.publish(new TaskAssignedEvent(
-                    membership.getTenantId(),
-                    task.getTaskId(),
-                    task.getWorkspaceId(),
-                    task.getAssigneeUserId()
-            ));
-        }
-
-        return toTaskView(task);
+                                task.update(normalizedTitle, normalizedDescription, nextStatus, normalizedAssigneeUserId, userId);
+                                return taskRepository.save(task)
+                                        .flatMap(saved -> {
+                                            auditLogger.logWrite("tasks", "update", "task", saved.getTaskId(), "SUCCESS");
+                                            Mono<Void> published = Mono.empty();
+                                            if (!previousStatus.equals(nextStatus.name())) {
+                                                published = published.then(domainEventPublisher.publish(new TaskStatusChangedEvent(
+                                                        membership.getTenantId(),
+                                                        saved.getTaskId(),
+                                                        saved.getWorkspaceId(),
+                                                        previousStatus,
+                                                        nextStatus.name()
+                                                )));
+                                            }
+                                            if (!java.util.Objects.equals(previousAssignee, saved.getAssigneeUserId()) && saved.getAssigneeUserId() != null) {
+                                                published = published.then(domainEventPublisher.publish(new TaskAssignedEvent(
+                                                        membership.getTenantId(),
+                                                        saved.getTaskId(),
+                                                        saved.getWorkspaceId(),
+                                                        saved.getAssigneeUserId()
+                                                )));
+                                            }
+                                            return published.thenReturn(saved);
+                                        });
+                            }));
+                        }))
+                .map(this::toTaskView);
     }
 
-    @Transactional
-    public TaskCommentView addComment(String taskId, String userId, String body) {
-        TaskEntity task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
-        requireActiveMembership(task.getWorkspaceId(), userId);
-        if (task.getStatus() == TaskStatus.CANCELED) {
-            throw new IllegalStateException("Canceled tasks are locked for comments");
-        }
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<TaskCommentView> addComment(String taskId, String userId, String body) {
         String normalizedBody = requireText("Task comment", body, MAX_DESCRIPTION_LENGTH);
-        TaskCommentEntity saved = taskCommentRepository.save(new TaskCommentEntity(
-                "task-comment-" + UUID.randomUUID(),
-                taskId,
-                userId,
-                normalizedBody
-        ));
-        auditLogger.logWrite("tasks", "comment", "task", taskId, "SUCCESS");
-        return new TaskCommentView(saved.getCommentId(), saved.getTaskId(), saved.getAuthorUserId(), saved.getBody());
+        return taskRepository.findById(taskId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Task not found: " + taskId)))
+                .flatMap(task -> requireActiveMembership(task.getWorkspaceId(), userId)
+                        .then(Mono.defer(() -> {
+                            if (task.getStatus() == TaskStatus.CANCELED) {
+                                return Mono.error(new IllegalStateException("Canceled tasks are locked for comments"));
+                            }
+                            return taskCommentRepository.save(new TaskCommentEntity(
+                                    "task-comment-" + UUID.randomUUID(),
+                                    taskId,
+                                    userId,
+                                    normalizedBody
+                            ));
+                        })))
+                .doOnNext(saved -> auditLogger.logWrite("tasks", "comment", "task", taskId, "SUCCESS"))
+                .map(saved -> new TaskCommentView(saved.getCommentId(), saved.getTaskId(), saved.getAuthorUserId(), saved.getBody()));
     }
 
     public record TaskView(
@@ -213,13 +219,15 @@ public class TasksFacade {
     public record TaskCommentView(String commentId, String taskId, String authorUserId, String body) {
     }
 
-    private MembershipEntity requireActiveMembership(String workspaceId, String userId) {
-        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new AuthorizationDeniedException("User is not a member of workspace " + workspaceId));
-        if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new IllegalStateException("Membership is not active for user " + userId);
-        }
-        return membership;
+    private Mono<MembershipEntity> requireActiveMembership(String workspaceId, String userId) {
+        return membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                .switchIfEmpty(Mono.error(new AuthorizationDeniedException("User is not a member of workspace " + workspaceId)))
+                .flatMap(membership -> {
+                    if (membership.getStatus() != MembershipStatus.ACTIVE) {
+                        return Mono.error(new IllegalStateException("Membership is not active for user " + userId));
+                    }
+                    return Mono.just(membership);
+                });
     }
 
     private TaskView toTaskView(TaskEntity task) {

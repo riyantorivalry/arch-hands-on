@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 @Service
 public class SessionAuthenticationService {
@@ -33,47 +34,54 @@ public class SessionAuthenticationService {
         this.userSessionRepository = userSessionRepository;
     }
 
-    @Transactional
-    public AuthenticatedSession login(String userId, String workspaceId) {
-        userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
-        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("Membership not found for workspace " + workspaceId));
-        if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new IllegalStateException("Membership is not active for user " + userId);
-        }
-
-        String token = UUID.randomUUID().toString() + UUID.randomUUID().toString().replace("-", "");
-        Instant expiresAt = Instant.now().plus(SESSION_TTL);
-        userSessionRepository.save(new UserSessionEntity(
-                token,
-                membership.getTenantId(),
-                membership.getWorkspaceId(),
-                membership.getUserId(),
-                SessionStatus.ACTIVE,
-                expiresAt
-        ));
-        return new AuthenticatedSession(token, membership.getTenantId(), membership.getWorkspaceId(), membership.getUserId(), expiresAt);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<AuthenticatedSession> login(String userId, String workspaceId) {
+        return userRepository.findById(userId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("User not found: " + userId)))
+                .then(membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Membership not found for workspace " + workspaceId))))
+                .flatMap(membership -> {
+                    if (membership.getStatus() != MembershipStatus.ACTIVE) {
+                        return Mono.error(new IllegalStateException("Membership is not active for user " + userId));
+                    }
+                    String token = UUID.randomUUID().toString() + UUID.randomUUID().toString().replace("-", "");
+                    Instant expiresAt = Instant.now().plus(SESSION_TTL);
+                    return userSessionRepository.save(new UserSessionEntity(
+                                    token,
+                                    membership.getTenantId(),
+                                    membership.getWorkspaceId(),
+                                    membership.getUserId(),
+                                    SessionStatus.ACTIVE,
+                                    expiresAt
+                            ))
+                            .thenReturn(new AuthenticatedSession(token, membership.getTenantId(), membership.getWorkspaceId(), membership.getUserId(), expiresAt));
+                });
     }
 
-    @Transactional(readOnly = true)
-    public RequestContext authenticate(String token, String correlationId) {
-        UserSessionEntity session = userSessionRepository.findBySessionToken(token)
-                .orElseThrow(() -> new AuthenticationRequiredException("Invalid session token"));
-        if (session.getStatus() != SessionStatus.ACTIVE || session.getExpiresAt().isBefore(Instant.now())) {
-            throw new AuthenticationRequiredException("Session is expired or revoked");
-        }
-        return new RequestContext(session.getTenantId(), session.getWorkspaceId(), session.getUserId(), correlationId);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<RequestContext> authenticate(String token, String correlationId) {
+        return userSessionRepository.findBySessionToken(token)
+                .switchIfEmpty(Mono.error(new AuthenticationRequiredException("Invalid session token")))
+                .flatMap(session -> {
+                    if (session.getStatus() != SessionStatus.ACTIVE || session.getExpiresAt().isBefore(Instant.now())) {
+                        return Mono.error(new AuthenticationRequiredException("Session is expired or revoked"));
+                    }
+                    return Mono.just(new RequestContext(session.getTenantId(), session.getWorkspaceId(), session.getUserId(), correlationId));
+                });
     }
 
-    @Transactional
-    public void logout(String token) {
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<Void> logout(String token) {
         if (token == null || token.isBlank()) {
-            throw new AuthenticationRequiredException("Session token is required");
+            return Mono.error(new AuthenticationRequiredException("Session token is required"));
         }
-        UserSessionEntity session = userSessionRepository.findBySessionToken(token)
-                .orElseThrow(() -> new AuthenticationRequiredException("Invalid session token"));
-        session.revoke();
+        return userSessionRepository.findBySessionToken(token)
+                .switchIfEmpty(Mono.error(new AuthenticationRequiredException("Invalid session token")))
+                .flatMap(session -> {
+                    session.revoke();
+                    return userSessionRepository.save(session);
+                })
+                .then();
     }
 
     public record AuthenticatedSession(

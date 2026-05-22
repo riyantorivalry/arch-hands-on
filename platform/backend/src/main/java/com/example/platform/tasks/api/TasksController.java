@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @Validated
 @RestController
@@ -28,54 +29,59 @@ public class TasksController {
     }
 
     @PostMapping("/workspaces/{workspaceId}/tasks")
-    public TasksFacade.TaskView createTask(
+    public Mono<TasksFacade.TaskView> createTask(
             @PathVariable String workspaceId,
             @Valid @RequestBody CreateTaskRequest request
     ) {
-        return facade.createTask(
-                workspaceId,
-                RequestContexts.current().userId(),
-                request.title(),
-                request.description(),
-                request.assigneeUserId()
-        );
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.createTask(
+                        workspaceId,
+                        context.userId(),
+                        request.title(),
+                        request.description(),
+                        request.assigneeUserId()
+                ));
     }
 
     @GetMapping("/workspaces/{workspaceId}/tasks")
-    public List<TasksFacade.TaskView> listTasks(
+    public Mono<List<TasksFacade.TaskView>> listTasks(
             @PathVariable String workspaceId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        return facade.listTasks(workspaceId, RequestContexts.current().userId(), page, size);
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.listTasks(workspaceId, context.userId(), page, size));
     }
 
     @GetMapping("/tasks/{taskId}")
-    public TasksFacade.TaskView getTask(@PathVariable String taskId) {
-        return facade.getTask(taskId, RequestContexts.current().userId());
+    public Mono<TasksFacade.TaskView> getTask(@PathVariable String taskId) {
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.getTask(taskId, context.userId()));
     }
 
     @PatchMapping("/tasks/{taskId}")
-    public TasksFacade.TaskView updateTask(
+    public Mono<TasksFacade.TaskView> updateTask(
             @PathVariable String taskId,
             @Valid @RequestBody UpdateTaskRequest request
     ) {
-        return facade.updateTask(
-                taskId,
-                RequestContexts.current().userId(),
-                request.title(),
-                request.description(),
-                request.status(),
-                request.assigneeUserId()
-        );
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.updateTask(
+                        taskId,
+                        context.userId(),
+                        request.title(),
+                        request.description(),
+                        request.status(),
+                        request.assigneeUserId()
+                ));
     }
 
     @PostMapping("/tasks/{taskId}/comments")
-    public TasksFacade.TaskCommentView addComment(
+    public Mono<TasksFacade.TaskCommentView> addComment(
             @PathVariable String taskId,
             @Valid @RequestBody AddTaskCommentRequest request
     ) {
-        return facade.addComment(taskId, RequestContexts.current().userId(), request.body());
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.addComment(taskId, context.userId(), request.body()));
     }
 
     public record CreateTaskRequest(

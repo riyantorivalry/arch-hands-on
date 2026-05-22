@@ -14,6 +14,7 @@ import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 /**
  * Publishes domain events to Kafka topics for distributed async processing.
@@ -55,16 +56,23 @@ public class KafkaDomainEventPublisher implements DomainEventPublisher {
     }
 
     @Override
-    public void publish(DomainEvent event) {
+    public Mono<Void> publish(DomainEvent event) {
         if (!kafkaEnabled) {
             LOGGER.debug("Kafka event publishing disabled, skipping: {}", event.getEventType());
-            return;
+            return Mono.empty();
         }
 
-        try {
+        return Mono.defer(() -> {
             String eventType = event.getEventType();
             String tenantId = event.getTenantId();
-            String eventJson = objectMapper.writeValueAsString(event);
+            String eventJson;
+            try {
+                eventJson = objectMapper.writeValueAsString(event);
+            } catch (Exception e) {
+                metricsCollector.recordEventFailed();
+                LOGGER.error("Error serializing domain event: {}", event.getEventType(), e);
+                return Mono.error(new RuntimeException("Failed to publish event", e));
+            }
 
             // Determine topic based on event type
             String topic = getTopicForEvent(eventType);
@@ -80,39 +88,27 @@ public class KafkaDomainEventPublisher implements DomainEventPublisher {
                     .setHeader("occurredAt", event.getOccurredAt().toString())
                     .build();
 
-            // Send asynchronously with callback
-            kafkaTemplate.send(message)
-                    .whenComplete((result, ex) -> {
-                        try {
-                            if (ex != null) {
-                                metricsCollector.recordEventFailed();
-                                LOGGER.error("Failed to publish event to Kafka: {} on topic {}", eventType, topic, ex);
-                            } else {
-                                metricsCollector.recordEventPublished();
-                                LOGGER.info(
-                                        "Event published: type={} id={} tenant={} partition={} offset={}",
-                                        eventType,
-                                        event.getEventId(),
-                                        tenantId,
-                                        result.getRecordMetadata().partition(),
-                                        result.getRecordMetadata().offset()
-                                );
-                            }
-                        } finally {
-                            metricsCollector.stopEventPublishingTimer(sample);
+            return Mono.fromFuture(kafkaTemplate.send(message))
+                    .doOnError(ex -> {
+                        metricsCollector.recordEventFailed();
+                        LOGGER.error("Failed to publish event to Kafka: {} on topic {}", eventType, topic, ex);
+                    })
+                    .doOnSuccess(result -> {
+                        if (result != null) {
+                            metricsCollector.recordEventPublished();
+                            LOGGER.info(
+                                    "Event published: type={} id={} tenant={} partition={} offset={}",
+                                    eventType,
+                                    event.getEventId(),
+                                    tenantId,
+                                    result.getRecordMetadata().partition(),
+                                    result.getRecordMetadata().offset()
+                            );
                         }
-                    });
-
-        } catch (Exception e) {
-            metricsCollector.recordEventFailed();
-            LOGGER.error("Error serializing domain event: {}", event.getEventType(), e);
-            throw new RuntimeException("Failed to publish event", e);
-        }
-    }
-
-    @Override
-    public void publishAll(java.util.List<DomainEvent> events) {
-        events.forEach(this::publish);
+                    })
+                    .doFinally(signalType -> metricsCollector.stopEventPublishingTimer(sample))
+                    .then();
+        });
     }
 
     private String getTopicForEvent(String eventType) {

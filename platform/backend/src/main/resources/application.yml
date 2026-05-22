@@ -17,6 +17,10 @@ spring:
       password: platform_readonly
       hikari:
         read-only: true
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/platform
+    username: platform
+    password: platform
   jpa:
     open-in-view: false
     hibernate:

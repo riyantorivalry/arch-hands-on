@@ -6,21 +6,22 @@ import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/platform")
 public class PlatformInfoController {
 
     @GetMapping("/info")
-    public PlatformInfoResponse info() {
-        var context = RequestContexts.current();
-        return new PlatformInfoResponse(
-                "platform-backend",
-                "0.0.1-SNAPSHOT",
-                "modular-monolith",
-                List.of("identity-access", "tenant-management", "messaging", "documents", "tasks"),
-                context.isAuthenticated() ? RequestContextResponse.from(context) : null
-        );
+    public Mono<PlatformInfoResponse> info() {
+        return RequestContexts.currentReactive()
+                .map(context -> new PlatformInfoResponse(
+                        "platform-backend",
+                        "0.0.1-SNAPSHOT",
+                        "modular-monolith",
+                        List.of("identity-access", "tenant-management", "messaging", "documents", "tasks"),
+                        context.isAuthenticated() ? RequestContextResponse.from(context) : null
+                ));
     }
 
     public record PlatformInfoResponse(

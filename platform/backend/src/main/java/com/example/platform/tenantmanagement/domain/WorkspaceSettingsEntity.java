@@ -1,32 +1,27 @@
 package com.example.platform.tenantmanagement.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "workspace_settings", indexes = {
-        @Index(name = "idx_workspace_settings_tenant", columnList = "tenant_id")
-})
+@Table("workspace_settings")
 public class WorkspaceSettingsEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "workspace_id", nullable = false, length = 64)
+    @Column("workspace_id")
     private String workspaceId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
+    @Column("tenant_id")
     private String tenantId;
 
-    @Column(name = "default_document_status", nullable = false, length = 32)
+    @Column("default_document_status")
     private String defaultDocumentStatus;
 
-    @Column(name = "task_auto_assign_enabled", nullable = false)
+    @Column("task_auto_assign_enabled")
     private boolean taskAutoAssignEnabled;
 
-    @Column(name = "message_retention_days", nullable = false)
+    @Column("message_retention_days")
     private int messageRetentionDays;
 
     protected WorkspaceSettingsEntity() {
@@ -70,5 +65,10 @@ public class WorkspaceSettingsEntity extends AbstractAuditableEntity {
         this.defaultDocumentStatus = defaultDocumentStatus;
         this.taskAutoAssignEnabled = taskAutoAssignEnabled;
         this.messageRetentionDays = messageRetentionDays;
+    }
+
+    @Override
+    public Object getId() {
+        return workspaceId;
     }
 }

@@ -1,47 +1,39 @@
 package com.example.platform.tasks.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "tasks", indexes = {
-        @Index(name = "idx_tasks_workspace", columnList = "workspace_id,updated_at")
-})
+@Table("tasks")
 public class TaskEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "task_id", nullable = false, length = 64)
+    @Column("task_id")
     private String taskId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
+    @Column("tenant_id")
     private String tenantId;
 
-    @Column(name = "workspace_id", nullable = false, length = 64)
+    @Column("workspace_id")
     private String workspaceId;
 
-    @Column(name = "title", nullable = false, length = 200)
+    @Column("title")
     private String title;
 
-    @Column(name = "description", nullable = false, length = 4000)
+    @Column("description")
     private String description;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 32)
+    @Column("status")
     private TaskStatus status;
 
-    @Column(name = "assignee_user_id", length = 64)
+    @Column("assignee_user_id")
     private String assigneeUserId;
 
-    @Column(name = "created_by_user_id", nullable = false, length = 64)
+    @Column("created_by_user_id")
     private String createdByUserId;
 
-    @Column(name = "last_modified_by_user_id", nullable = false, length = 64)
+    @Column("last_modified_by_user_id")
     private String lastModifiedByUserId;
 
     protected TaskEntity() {
@@ -107,5 +99,10 @@ public class TaskEntity extends AbstractAuditableEntity {
         this.status = status;
         this.assigneeUserId = assigneeUserId;
         this.lastModifiedByUserId = modifiedByUserId;
+    }
+
+    @Override
+    public Object getId() {
+        return taskId;
     }
 }

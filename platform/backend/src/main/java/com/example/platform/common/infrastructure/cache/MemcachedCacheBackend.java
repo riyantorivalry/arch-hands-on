@@ -1,20 +1,21 @@
 package com.example.platform.common.infrastructure.cache;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.net.InetSocketAddress;
-import java.net.Socket;
+import io.netty.channel.ChannelOption;
+import io.netty.handler.timeout.ReadTimeoutHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+import reactor.netty.tcp.TcpClient;
 
 @Component
+@ConditionalOnProperty(name = "platform.feature.cache.memcached.enabled", havingValue = "true")
 public class MemcachedCacheBackend implements CacheBackend {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MemcachedCacheBackend.class);
@@ -42,109 +43,103 @@ public class MemcachedCacheBackend implements CacheBackend {
     }
 
     @Override
-    public Object get(String key) {
-        try {
-            String safeKey = safeKey(key);
-            return withConnection((reader, writer) -> {
-                writer.write("get " + safeKey + "\r\n");
-                writer.flush();
-                String header = reader.readLine();
-                if (header == null || header.equals("END")) {
-                    return null;
-                }
-                String[] parts = header.split(" ");
-                int bytes = Integer.parseInt(parts[3]);
-                char[] payload = new char[bytes];
-                int read = reader.read(payload);
-                reader.readLine();
-                reader.readLine();
-                if (read <= 0) {
-                    return null;
-                }
-                byte[] decoded = Base64.getDecoder().decode(new String(payload, 0, read));
-                return objectMapper.readValue(decoded, Object.class);
-            });
-        } catch (Exception exception) {
-            LOGGER.warn("Error getting Memcached key: {}", key, exception);
-            return null;
-        }
+    public Mono<Object> get(String key) {
+        String safeKey = safeKey(key);
+        return exchange("get " + safeKey + "\r\n", "END\r\n")
+                .flatMap(response -> {
+                    String[] lines = response.split("\r\n");
+                    if (lines.length < 3 || lines[0].equals("END")) {
+                        return Mono.empty();
+                    }
+                    try {
+                        byte[] decoded = Base64.getDecoder().decode(lines[1]);
+                        return Mono.just(objectMapper.readValue(decoded, Object.class));
+                    } catch (Exception exception) {
+                        return Mono.error(exception);
+                    }
+                })
+                .doOnError(exception -> LOGGER.warn("Error getting Memcached key: {}", key, exception))
+                .onErrorResume(exception -> Mono.empty());
     }
 
     @Override
-    public void set(String key, Object value, long ttlSeconds) {
-        try {
-            String safeKey = safeKey(key);
-            byte[] json = objectMapper.writeValueAsBytes(value);
-            String payload = Base64.getEncoder().encodeToString(json);
-            withConnection((reader, writer) -> {
-                writer.write("set " + safeKey + " 0 " + Math.max(0, ttlSeconds) + " " + payload.length() + "\r\n");
-                writer.write(payload + "\r\n");
-                writer.flush();
-                reader.readLine();
-                return null;
-            });
-        } catch (Exception exception) {
-            LOGGER.warn("Error setting Memcached key: {}", key, exception);
-        }
+    public Mono<Void> set(String key, Object value, long ttlSeconds) {
+        String safeKey = safeKey(key);
+        return Mono.fromCallable(() -> {
+                    byte[] json = objectMapper.writeValueAsBytes(value);
+                    String payload = Base64.getEncoder().encodeToString(json);
+                    return "set " + safeKey + " 0 " + Math.max(0, ttlSeconds) + " " + payload.length()
+                            + "\r\n" + payload + "\r\n";
+                })
+                .flatMap(command -> exchange(command, "STORED\r\n"))
+                .doOnError(exception -> LOGGER.warn("Error setting Memcached key: {}", key, exception))
+                .onErrorResume(exception -> Mono.empty())
+                .then();
     }
 
     @Override
-    public void set(String key, Object value) {
-        set(key, value, 0);
+    public Mono<Void> set(String key, Object value) {
+        return set(key, value, 0);
     }
 
     @Override
-    public void delete(String key) {
-        try {
-            String safeKey = safeKey(key);
-            withConnection((reader, writer) -> {
-                writer.write("delete " + safeKey + "\r\n");
-                writer.flush();
-                reader.readLine();
-                return null;
-            });
-        } catch (Exception exception) {
-            LOGGER.warn("Error deleting Memcached key: {}", key, exception);
-        }
+    public Mono<Void> delete(String key) {
+        String safeKey = safeKey(key);
+        return exchange("delete " + safeKey + "\r\n", "\r\n")
+                .doOnError(exception -> LOGGER.warn("Error deleting Memcached key: {}", key, exception))
+                .onErrorResume(exception -> Mono.empty())
+                .then();
     }
 
     @Override
-    public void deletePattern(String pattern) {
+    public Mono<Void> deletePattern(String pattern) {
         if (!pattern.contains("*")) {
-            delete(pattern);
+            return delete(pattern);
         }
+        return Mono.empty();
     }
 
     @Override
-    public boolean exists(String key) {
-        return get(key) != null;
+    public Mono<Boolean> exists(String key) {
+        return get(key).map(value -> true).defaultIfEmpty(false);
     }
 
     @Override
-    public long increment(String key, long ttlSeconds) {
-        try {
-            String safeKey = safeKey(key);
-            return withConnection((reader, writer) -> {
-                writer.write("incr " + safeKey + " 1\r\n");
-                writer.flush();
-                String response = reader.readLine();
-                if (response != null && !response.equals("NOT_FOUND")) {
-                    return Long.parseLong(response);
-                }
-                writer.write("add " + safeKey + " 0 " + Math.max(0, ttlSeconds) + " 1\r\n1\r\n");
-                writer.flush();
-                reader.readLine();
-                return 1L;
-            });
-        } catch (Exception exception) {
-            LOGGER.warn("Error incrementing Memcached key: {}", key, exception);
-            return 0;
-        }
+    public Mono<Long> increment(String key, long ttlSeconds) {
+        String safeKey = safeKey(key);
+        return exchange("incr " + safeKey + " 1\r\n", "\r\n")
+                .flatMap(response -> {
+                    String firstLine = response.split("\r\n", 2)[0];
+                    if (!"NOT_FOUND".equals(firstLine)) {
+                        return Mono.just(Long.parseLong(firstLine));
+                    }
+                    return exchange("add " + safeKey + " 0 " + Math.max(0, ttlSeconds) + " 1\r\n1\r\n", "\r\n")
+                            .thenReturn(1L);
+                })
+                .doOnError(exception -> LOGGER.warn("Error incrementing Memcached key: {}", key, exception))
+                .onErrorReturn(0L);
     }
 
     @Override
-    public long getTtl(String key) {
-        return -1;
+    public Mono<Long> getTtl(String key) {
+        return Mono.just(-1L);
+    }
+
+    private Mono<String> exchange(String command, String terminator) {
+        return TcpClient.create()
+                .host(host)
+                .port(port)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeoutMillis)
+                .doOnConnected(connection -> connection.addHandlerLast(new ReadTimeoutHandler(timeoutMillis, TimeUnit.MILLISECONDS)))
+                .connect()
+                .flatMap(connection -> connection.outbound()
+                        .sendString(Mono.just(command), StandardCharsets.UTF_8)
+                        .then()
+                        .thenMany(connection.inbound().receive().asString(StandardCharsets.UTF_8))
+                        .scan("", String::concat)
+                        .filter(response -> response.endsWith(terminator) || response.contains(terminator))
+                        .next()
+                        .doFinally(signalType -> connection.dispose()));
     }
 
     private String safeKey(String key) {
@@ -156,20 +151,5 @@ public class MemcachedCacheBackend implements CacheBackend {
             throw new IllegalArgumentException("Memcached keys must be <= 250 characters and contain no whitespace");
         }
         return safeKey;
-    }
-
-    private <T> T withConnection(MemcachedOperation<T> operation) throws Exception {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), timeoutMillis);
-            socket.setSoTimeout(timeoutMillis);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
-            return operation.execute(reader, writer);
-        }
-    }
-
-    @FunctionalInterface
-    private interface MemcachedOperation<T> {
-        T execute(BufferedReader reader, BufferedWriter writer) throws Exception;
     }
 }

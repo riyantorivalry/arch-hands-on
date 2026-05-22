@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/benchmarks/rate-limit")
@@ -24,18 +25,18 @@ public class RateLimitBenchmarkController {
     }
 
     @GetMapping("/algorithm")
-    public RateLimitAlgorithmResponse selectedAlgorithm() {
-        RequestContexts.authenticated();
-        return new RateLimitAlgorithmResponse(rateLimitService.mode());
+    public Mono<RateLimitAlgorithmResponse> selectedAlgorithm() {
+        return RequestContexts.authenticatedReactive()
+                .thenReturn(new RateLimitAlgorithmResponse(rateLimitService.mode()));
     }
 
     @PostMapping("/{algorithm}/decisions")
-    public RateLimitDecision check(
+    public Mono<RateLimitDecision> check(
             @PathVariable String algorithm,
             @Valid @RequestBody RateLimitDecisionRequest request
     ) {
-        RequestContexts.authenticated();
-        return rateLimitService.check(algorithm, request.key(), request.limit(), request.windowSeconds());
+        return RequestContexts.authenticatedReactive()
+                .then(Mono.defer(() -> rateLimitService.check(algorithm, request.key(), request.limit(), request.windowSeconds())));
     }
 
     public record RateLimitAlgorithmResponse(String selectedAlgorithm) {

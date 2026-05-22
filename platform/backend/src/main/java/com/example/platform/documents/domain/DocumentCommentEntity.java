@@ -1,29 +1,24 @@
 package com.example.platform.documents.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "document_comments", indexes = {
-        @Index(name = "idx_document_comments_document", columnList = "document_id,created_at")
-})
+@Table("document_comments")
 public class DocumentCommentEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "comment_id", nullable = false, length = 64)
+    @Column("comment_id")
     private String commentId;
 
-    @Column(name = "document_id", nullable = false, length = 64)
+    @Column("document_id")
     private String documentId;
 
-    @Column(name = "author_user_id", nullable = false, length = 64)
+    @Column("author_user_id")
     private String authorUserId;
 
-    @Column(name = "body", nullable = false, length = 4000)
+    @Column("body")
     private String body;
 
     protected DocumentCommentEntity() {
@@ -50,5 +45,10 @@ public class DocumentCommentEntity extends AbstractAuditableEntity {
 
     public String getBody() {
         return body;
+    }
+
+    @Override
+    public Object getId() {
+        return commentId;
     }
 }

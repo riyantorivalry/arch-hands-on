@@ -1,10 +1,10 @@
 package com.example.platform.tasks.infrastructure;
 
 import com.example.platform.tasks.domain.TaskCommentEntity;
-import java.util.List;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Flux;
 
-public interface TaskCommentRepository extends JpaRepository<TaskCommentEntity, String> {
+public interface TaskCommentRepository extends ReactiveCrudRepository<TaskCommentEntity, String> {
 
-    List<TaskCommentEntity> findByTaskIdOrderByCreatedAtAsc(String taskId);
+    Flux<TaskCommentEntity> findByTaskIdOrderByCreatedAtAsc(String taskId);
 }

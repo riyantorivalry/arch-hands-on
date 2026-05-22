@@ -91,7 +91,7 @@ public class ObservabilityConfiguration {
     @ConditionalOnBean(OutboxEventRepository.class)
     public MeterBinder outboxMetrics(OutboxEventRepository outboxEventRepository) {
         return (registry) -> Gauge.builder("outbox.unpublished.events", outboxEventRepository,
-                        OutboxEventRepository::countUnpublishedEvents)
+                        repository -> repository.countUnpublishedEvents().blockOptional().orElse(0L))
                 .description("Number of unpublished events waiting in the outbox")
                 .tag("component", "outbox")
                 .register(registry);

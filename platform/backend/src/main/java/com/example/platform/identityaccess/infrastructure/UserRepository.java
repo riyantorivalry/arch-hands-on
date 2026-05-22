@@ -1,10 +1,10 @@
 package com.example.platform.identityaccess.infrastructure;
 
 import com.example.platform.identityaccess.domain.UserEntity;
-import java.util.Optional;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Mono;
 
-public interface UserRepository extends JpaRepository<UserEntity, String> {
+public interface UserRepository extends ReactiveCrudRepository<UserEntity, String> {
 
-    Optional<UserEntity> findByEmail(String email);
+    Mono<UserEntity> findByEmail(String email);
 }

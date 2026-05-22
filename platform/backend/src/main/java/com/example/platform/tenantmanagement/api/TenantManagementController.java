@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @Validated
 @RestController
@@ -27,7 +28,7 @@ public class TenantManagementController {
     }
 
     @PostMapping("/tenants")
-    public TenantManagementFacade.TenantView createTenant(@Valid @RequestBody CreateTenantRequest request) {
+    public Mono<TenantManagementFacade.TenantView> createTenant(@Valid @RequestBody CreateTenantRequest request) {
         return facade.createTenant(
                 request.tenantName(),
                 request.workspaceName(),
@@ -38,31 +39,33 @@ public class TenantManagementController {
     }
 
     @PostMapping("/tenants/{tenantId}/workspaces")
-    public TenantManagementFacade.WorkspaceView createWorkspace(
+    public Mono<TenantManagementFacade.WorkspaceView> createWorkspace(
             @PathVariable String tenantId,
             @Valid @RequestBody CreateWorkspaceRequest request
     ) {
-        var context = RequestContexts.authenticated();
-        return facade.createWorkspace(tenantId, context.workspaceId(), context.userId(), request.workspaceName());
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> facade.createWorkspace(tenantId, context.workspaceId(), context.userId(), request.workspaceName()));
     }
 
     @GetMapping("/workspaces/{workspaceId}")
-    public TenantManagementFacade.WorkspaceView getWorkspace(@PathVariable String workspaceId) {
-        return facade.getWorkspace(workspaceId, RequestContexts.authenticated().userId());
+    public Mono<TenantManagementFacade.WorkspaceView> getWorkspace(@PathVariable String workspaceId) {
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> facade.getWorkspace(workspaceId, context.userId()));
     }
 
     @PatchMapping("/workspaces/{workspaceId}/settings")
-    public TenantManagementFacade.WorkspaceSettingsView updateWorkspaceSettings(
+    public Mono<TenantManagementFacade.WorkspaceSettingsView> updateWorkspaceSettings(
             @PathVariable String workspaceId,
             @Valid @RequestBody UpdateWorkspaceSettingsRequest request
     ) {
-        return facade.updateWorkspaceSettings(
-                workspaceId,
-                RequestContexts.authenticated().userId(),
-                request.defaultDocumentStatus(),
-                request.taskAutoAssignEnabled(),
-                request.messageRetentionDays()
-        );
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> facade.updateWorkspaceSettings(
+                        workspaceId,
+                        context.userId(),
+                        request.defaultDocumentStatus(),
+                        request.taskAutoAssignEnabled(),
+                        request.messageRetentionDays()
+                ));
     }
 
     public record CreateTenantRequest(

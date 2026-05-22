@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @Validated
 @RestController
@@ -40,54 +41,58 @@ public class AuthorizationComparisonController {
     }
 
     @PostMapping("/v1/workspaces/{workspaceId}/authorization/decisions")
-    public AuthorizationDecision decideWithRbac(
+    public Mono<AuthorizationDecision> decideWithRbac(
             @PathVariable String workspaceId,
             @RequestBody AuthorizationDecisionRequest request
     ) {
-        return rbacAuthorization.decide(requireActiveMembership(workspaceId), request);
+        return requireActiveMembership(workspaceId).map(membership -> rbacAuthorization.decide(membership, request));
     }
 
     @PostMapping("/v2/workspaces/{workspaceId}/authorization/decisions")
-    public AuthorizationDecision decideWithAbacOpa(
+    public Mono<AuthorizationDecision> decideWithAbacOpa(
             @PathVariable String workspaceId,
             @RequestBody AuthorizationDecisionRequest request
     ) {
-        return abacOpaAuthorization.decide(requireActiveMembership(workspaceId), request);
+        return requireActiveMembership(workspaceId).map(membership -> abacOpaAuthorization.decide(membership, request));
     }
 
     @PostMapping("/workspaces/{workspaceId}/authorization/decisions")
-    public AuthorizationDecision decideWithSelectedPolicyEngine(
+    public Mono<AuthorizationDecision> decideWithSelectedPolicyEngine(
             @PathVariable String workspaceId,
             @RequestBody AuthorizationDecisionRequest request
     ) {
-        return policyEngineService.decide(requireActiveMembership(workspaceId), request);
+        return requireActiveMembership(workspaceId)
+                .flatMap(membership -> policyEngineService.decideReactive(membership, request));
     }
 
     @PostMapping("/benchmarks/authorization/{engine}/decisions")
-    public AuthorizationDecision decideWithPolicyEngine(
+    public Mono<AuthorizationDecision> decideWithPolicyEngine(
             @PathVariable String engine,
             @RequestBody AuthorizationDecisionRequest request
     ) {
-        String workspaceId = RequestContexts.authenticated().workspaceId();
-        return policyEngineService.decide(engine, requireActiveMembership(workspaceId), request);
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> requireActiveMembership(context.workspaceId())
+                        .flatMap(membership -> policyEngineService.decideReactive(engine, membership, request)));
     }
 
     @org.springframework.web.bind.annotation.GetMapping("/benchmarks/authorization/engine")
-    public AuthorizationEngineResponse selectedPolicyEngine() {
-        RequestContexts.authenticated();
-        return new AuthorizationEngineResponse(policyEngineService.mode());
+    public Mono<AuthorizationEngineResponse> selectedPolicyEngine() {
+        return RequestContexts.authenticatedReactive()
+                .thenReturn(new AuthorizationEngineResponse(policyEngineService.mode()));
     }
 
     public record AuthorizationEngineResponse(String selectedEngine) {
     }
 
-    private MembershipEntity requireActiveMembership(String workspaceId) {
-        String userId = RequestContexts.authenticated().userId();
-        MembershipEntity membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new AuthorizationDeniedException("User is not a member of workspace " + workspaceId));
-        if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new IllegalStateException("Membership is not active for user " + userId);
-        }
-        return membership;
+    private Mono<MembershipEntity> requireActiveMembership(String workspaceId) {
+        return RequestContexts.authenticatedReactive()
+                .flatMap(context -> membershipRepository.findByWorkspaceIdAndUserId(workspaceId, context.userId())
+                        .switchIfEmpty(Mono.error(new AuthorizationDeniedException("User is not a member of workspace " + workspaceId)))
+                        .flatMap(membership -> {
+                            if (membership.getStatus() != MembershipStatus.ACTIVE) {
+                                return Mono.error(new IllegalStateException("Membership is not active for user " + context.userId()));
+                            }
+                            return Mono.just(membership);
+                        }));
     }
 }

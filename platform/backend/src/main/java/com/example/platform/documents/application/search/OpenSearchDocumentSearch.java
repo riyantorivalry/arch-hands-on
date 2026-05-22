@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 @Service
 public class OpenSearchDocumentSearch implements DocumentSearchUseCase {
@@ -34,29 +35,30 @@ public class OpenSearchDocumentSearch implements DocumentSearchUseCase {
     }
 
     @Override
-    public List<DocumentSearchResult> search(String workspaceId, String query, Pageable pageable) {
-        try {
-            List<DocumentSearchResult> results = documentSearchRepository
-                    .findByWorkspaceIdAndTitleContainsOrContentContains(workspaceId, query, query, pageable)
-                    .stream()
-                    .map(doc -> new DocumentSearchResult(
-                            doc.getDocumentId(),
-                            doc.getWorkspaceId(),
-                            doc.getTitle(),
-                            doc.getContent(),
-                            doc.getStatus(),
-                            doc.getCreatedByUserId(),
-                            doc.getLastModifiedByUserId()
-                    ))
-                    .toList();
-            if (!results.isEmpty()) {
-                return results;
-            }
-            LOGGER.debug("OpenSearch returned no document hits, falling back to PostgreSQL ILIKE");
-            return fallbackSearch.search(workspaceId, query, pageable);
-        } catch (RuntimeException exception) {
-            LOGGER.warn("OpenSearch document search failed, falling back to PostgreSQL ILIKE: {}", exception.getMessage());
-            return fallbackSearch.search(workspaceId, query, pageable);
-        }
+    public Mono<List<DocumentSearchResult>> search(String workspaceId, String query, Pageable pageable) {
+        return documentSearchRepository.findByWorkspaceIdAndTitleContainsOrContentContains(workspaceId, query, query, pageable)
+                .map(documents -> documents
+                        .stream()
+                        .map(doc -> new DocumentSearchResult(
+                                doc.getDocumentId(),
+                                doc.getWorkspaceId(),
+                                doc.getTitle(),
+                                doc.getContent(),
+                                doc.getStatus(),
+                                doc.getCreatedByUserId(),
+                                doc.getLastModifiedByUserId()
+                        ))
+                        .toList())
+                .flatMap(results -> {
+                    if (!results.isEmpty()) {
+                        return Mono.just(results);
+                    }
+                    LOGGER.debug("OpenSearch returned no document hits, falling back to PostgreSQL ILIKE");
+                    return fallbackSearch.search(workspaceId, query, pageable);
+                })
+                .onErrorResume(RuntimeException.class, exception -> {
+                    LOGGER.warn("OpenSearch document search failed, falling back to PostgreSQL ILIKE: {}", exception.getMessage());
+                    return fallbackSearch.search(workspaceId, query, pageable);
+                });
     }
 }

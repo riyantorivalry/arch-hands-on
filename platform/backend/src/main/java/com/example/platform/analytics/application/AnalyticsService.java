@@ -5,18 +5,19 @@ import com.example.platform.analytics.domain.AnalyticsEventDocument;
 import com.example.platform.analytics.infrastructure.AnalyticsEventRepository;
 import com.example.platform.analytics.infrastructure.AnalyticsEventMongoRepository;
 import com.example.platform.common.web.RequestContext;
+import com.example.platform.common.web.RequestContextHolder;
 import com.example.platform.common.web.RequestContexts;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import reactor.core.publisher.Mono;
 
 /**
  * Analytics service for capturing and querying user behavior events.
@@ -41,11 +42,11 @@ public class AnalyticsService {
         this.objectMapper = objectMapper;
     }
 
-    @Transactional
-    public void captureEvent(String eventType, String eventCategory, String resourceType,
+    public Mono<Void> captureEvent(String eventType, String eventCategory, String resourceType,
                            String resourceId, Map<String, Object> eventData) {
-        try {
-            RequestContext context = RequestContexts.current();
+        return Mono.deferContextual(contextView -> {
+            try {
+                RequestContext context = RequestContextHolder.get(contextView).orElseGet(RequestContexts::current);
             String eventId = "analytics-" + UUID.randomUUID().toString();
             JsonNode serializedData = objectMapper.valueToTree(eventData);
 
@@ -63,7 +64,7 @@ public class AnalyticsService {
                     null, // userAgent - not available in current RequestContext
                     null  // ipAddress - not available in current RequestContext
             );
-            savePostgres(postgresEvent);
+            Mono<Void> postgresSave = savePostgres(postgresEvent);
 
             AnalyticsEventDocument mongoEvent = new AnalyticsEventDocument(
                     eventId,
@@ -79,60 +80,65 @@ public class AnalyticsService {
                     null,
                     null
             );
-            saveMongo(mongoEvent);
+            Mono<Void> mongoSave = saveMongo(mongoEvent);
             LOGGER.debug("Captured analytics event: {} for tenant: {}", eventType, context.tenantId());
 
-        } catch (Exception e) {
-            LOGGER.error("Failed to capture analytics event", e);
-        }
+                return Mono.whenDelayError(postgresSave, mongoSave);
+            } catch (Exception e) {
+                LOGGER.error("Failed to capture analytics event", e);
+                return Mono.empty();
+            }
+        });
     }
 
-    @Transactional(readOnly = true)
-    public List<AnalyticsEventView> getPostgresJsonbEventsForTenant(String tenantId, Instant start, Instant end) {
-        return postgresRepository.findByTenantIdAndCreatedAtBetweenOrderByCreatedAtDesc(tenantId, start, end).stream()
+    public Mono<List<AnalyticsEventView>> getPostgresJsonbEventsForTenant(String tenantId, Instant start, Instant end) {
+        return postgresRepository.findByTenantIdAndCreatedAtBetweenOrderByCreatedAtDesc(tenantId, start, end)
                 .map(this::toView)
-                .toList();
+                .collectList();
     }
 
-    public List<AnalyticsEventView> getMongoEventsForTenant(String tenantId, Instant start, Instant end) {
-        return mongoRepository.findByTenantIdAndCreatedAtBetweenOrderByCreatedAtDesc(tenantId, start, end).stream()
+    public Mono<List<AnalyticsEventView>> getMongoEventsForTenant(String tenantId, Instant start, Instant end) {
+        return mongoRepository.findByTenantIdAndCreatedAtBetweenOrderByCreatedAtDesc(tenantId, start, end)
                 .map(this::toView)
-                .toList();
+                .collectList();
     }
 
-    @Transactional(readOnly = true)
-    public long countPostgresJsonbEvents(String tenantId, String eventType, Instant start, Instant end) {
+    public Mono<Long> countPostgresJsonbEvents(String tenantId, String eventType, Instant start, Instant end) {
         return postgresRepository.countByTenantIdAndEventTypeAndCreatedAtBetween(tenantId, eventType, start, end);
     }
 
-    public long countMongoEvents(String tenantId, String eventType, Instant start, Instant end) {
+    public Mono<Long> countMongoEvents(String tenantId, String eventType, Instant start, Instant end) {
         return mongoRepository.countByTenantIdAndEventTypeAndCreatedAtBetween(tenantId, eventType, start, end);
     }
 
-    @Transactional(readOnly = true)
-    public List<String> getEventTypesForTenant(String tenantId) {
-        return postgresRepository.findDistinctEventTypesByTenantId(tenantId);
+    public Mono<List<String>> getEventTypesForTenant(String tenantId) {
+        return postgresRepository.findDistinctEventTypesByTenantId(tenantId).collectList();
     }
 
-    public List<String> getMongoEventTypesForTenant(String tenantId) {
-        var docs = mongoRepository.findDistinctEventTypesByTenantId(tenantId);
-        return docs.stream().map(d -> d.getEventType()).distinct().sorted().toList();
+    public Mono<List<String>> getMongoEventTypesForTenant(String tenantId) {
+        return mongoRepository.findDistinctEventTypesByTenantId(tenantId)
+                .map(AnalyticsEventDocument::getEventType)
+                .distinct()
+                .sort()
+                .collectList();
     }
 
-    private void savePostgres(AnalyticsEventEntity event) {
-        try {
-            postgresRepository.save(event);
-        } catch (Exception exception) {
-            LOGGER.warn("Failed to persist analytics event to Postgres JSONB: {}", event.getEventId(), exception);
-        }
+    private Mono<Void> savePostgres(AnalyticsEventEntity event) {
+        return postgresRepository.save(event)
+                .then()
+                .onErrorResume(exception -> {
+                    LOGGER.warn("Failed to persist analytics event to Postgres JSONB: {}", event.getEventId(), exception);
+                    return Mono.empty();
+                });
     }
 
-    private void saveMongo(AnalyticsEventDocument event) {
-        try {
-            mongoRepository.save(event);
-        } catch (Exception exception) {
-            LOGGER.warn("Failed to persist analytics event to MongoDB: {}", event.getEventId(), exception);
-        }
+    private Mono<Void> saveMongo(AnalyticsEventDocument event) {
+        return mongoRepository.save(event)
+                .then()
+                .onErrorResume(exception -> {
+                    LOGGER.warn("Failed to persist analytics event to MongoDB: {}", event.getEventId(), exception);
+                    return Mono.empty();
+                });
     }
 
     private AnalyticsEventView toView(AnalyticsEventEntity event) {
@@ -180,21 +186,21 @@ public class AnalyticsService {
     }
 
     // Convenience methods for common events
-    public void trackPageView(String page) {
-        captureEvent("page_view", "engagement", "page", page, Map.of("page", page));
+    public Mono<Void> trackPageView(String page) {
+        return captureEvent("page_view", "engagement", "page", page, Map.of("page", page));
     }
 
-    public void trackFeatureUsage(String feature, Map<String, Object> metadata) {
-        captureEvent("feature_usage", "engagement", "feature", feature, metadata);
+    public Mono<Void> trackFeatureUsage(String feature, Map<String, Object> metadata) {
+        return captureEvent("feature_usage", "engagement", "feature", feature, metadata);
     }
 
-    public void trackSearch(String query, int resultCount) {
-        captureEvent("search", "engagement", "search", null,
+    public Mono<Void> trackSearch(String query, int resultCount) {
+        return captureEvent("search", "engagement", "search", null,
                 Map.of("query", query, "resultCount", resultCount));
     }
 
-    public void trackError(String errorType, String message) {
-        captureEvent("error", "technical", "error", errorType,
+    public Mono<Void> trackError(String errorType, String message) {
+        return captureEvent("error", "technical", "error", errorType,
                 Map.of("message", message));
     }
 }

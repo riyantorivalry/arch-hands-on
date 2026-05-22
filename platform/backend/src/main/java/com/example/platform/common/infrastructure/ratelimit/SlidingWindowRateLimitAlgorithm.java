@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 @Component
 public class SlidingWindowRateLimitAlgorithm implements RateLimitAlgorithm {
@@ -23,7 +24,7 @@ public class SlidingWindowRateLimitAlgorithm implements RateLimitAlgorithm {
     }
 
     @Override
-    public synchronized RateLimitDecision check(String key, int limit, int windowSeconds) {
+    public Mono<RateLimitDecision> check(String key, int limit, int windowSeconds) {
         RateLimitInputs.validate(key, limit, windowSeconds);
         Instant now = Instant.now();
         long nowMillis = now.toEpochMilli();
@@ -31,23 +32,27 @@ public class SlidingWindowRateLimitAlgorithm implements RateLimitAlgorithm {
         long cutoffMillis = nowMillis - windowMillis;
         String cacheKey = RateLimitInputs.cacheKey(name(), key);
 
-        List<Long> timestamps = readTimestamps(cacheService.get(cacheKey)).stream()
-                .filter(timestamp -> timestamp > cutoffMillis)
-                .sorted(Comparator.naturalOrder())
-                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+        return cacheService.get(cacheKey)
+                .map(this::readTimestamps)
+                .defaultIfEmpty(new ArrayList<>())
+                .flatMap(existing -> {
+                    List<Long> timestamps = existing.stream()
+                            .filter(timestamp -> timestamp > cutoffMillis)
+                            .sorted(Comparator.naturalOrder())
+                            .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
 
-        boolean allowed = timestamps.size() < limit;
-        if (allowed) {
-            timestamps.add(nowMillis);
-        }
+                    boolean allowed = timestamps.size() < limit;
+                    if (allowed) {
+                        timestamps.add(nowMillis);
+                    }
 
-        cacheService.set(cacheKey, timestamps, windowSeconds);
+                    long remaining = Math.max(0, limit - timestamps.size());
+                    long resetSeconds = resetSeconds(timestamps, windowMillis, nowMillis);
+                    long retryAfterSeconds = allowed ? 0 : Math.max(1, resetSeconds);
+                    RateLimitDecision decision = new RateLimitDecision(name(), key, allowed, limit, remaining, retryAfterSeconds, resetSeconds, now);
 
-        long remaining = Math.max(0, limit - timestamps.size());
-        long resetSeconds = resetSeconds(timestamps, windowMillis, nowMillis);
-        long retryAfterSeconds = allowed ? 0 : Math.max(1, resetSeconds);
-
-        return new RateLimitDecision(name(), key, allowed, limit, remaining, retryAfterSeconds, resetSeconds, now);
+                    return cacheService.set(cacheKey, timestamps, windowSeconds).thenReturn(decision);
+                });
     }
 
     private List<Long> readTimestamps(Object value) {

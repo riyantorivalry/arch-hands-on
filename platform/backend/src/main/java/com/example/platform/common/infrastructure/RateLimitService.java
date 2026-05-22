@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 /**
  * Rate limiting service backed by a configurable algorithm.
@@ -31,11 +32,11 @@ public class RateLimitService {
         return mode;
     }
 
-    public RateLimitDecision check(String key, int limit, int windowSeconds) {
+    public Mono<RateLimitDecision> check(String key, int limit, int windowSeconds) {
         return selected().check(key, limit, windowSeconds);
     }
 
-    public RateLimitDecision check(String algorithm, String key, int limit, int windowSeconds) {
+    public Mono<RateLimitDecision> check(String algorithm, String key, int limit, int windowSeconds) {
         return algorithm(algorithm).check(key, limit, windowSeconds);
     }
 
@@ -55,53 +56,54 @@ public class RateLimitService {
      * @param windowSeconds Time window in seconds
      * @return true if request is allowed, false if rate limited
      */
-    public boolean isAllowed(String key, int limit, int windowSeconds) {
-        RateLimitDecision decision = check(key, limit, windowSeconds);
+    public Mono<Boolean> isAllowed(String key, int limit, int windowSeconds) {
+        return check(key, limit, windowSeconds)
+                .map(decision -> {
+                    if (!decision.allowed()) {
+                        LOGGER.warn("Rate limit exceeded for key: {} (algorithm: {}, limit: {}, retryAfterSeconds: {})",
+                                key, decision.algorithm(), decision.limit(), decision.retryAfterSeconds());
+                        return false;
+                    }
 
-        if (!decision.allowed()) {
-            LOGGER.warn("Rate limit exceeded for key: {} (algorithm: {}, limit: {}, retryAfterSeconds: {})",
-                    key, decision.algorithm(), decision.limit(), decision.retryAfterSeconds());
-            return false;
-        }
-
-        LOGGER.debug("Rate limit check passed for key: {} (algorithm: {}, remaining: {}, limit: {})",
-                key, decision.algorithm(), decision.remaining(), decision.limit());
-        return true;
+                    LOGGER.debug("Rate limit check passed for key: {} (algorithm: {}, remaining: {}, limit: {})",
+                            key, decision.algorithm(), decision.remaining(), decision.limit());
+                    return true;
+                });
     }
 
     /**
      * Check rate limit for a user across all API calls.
      */
-    public boolean isAllowedForUser(String userId, int limit, int windowSeconds) {
+    public Mono<Boolean> isAllowedForUser(String userId, int limit, int windowSeconds) {
         return isAllowed("user:" + userId + ":global", limit, windowSeconds);
     }
 
     /**
      * Check rate limit for a specific API endpoint.
      */
-    public boolean isAllowedForEndpoint(String userId, String endpoint, int limit, int windowSeconds) {
+    public Mono<Boolean> isAllowedForEndpoint(String userId, String endpoint, int limit, int windowSeconds) {
         return isAllowed("user:" + userId + ":endpoint:" + endpoint, limit, windowSeconds);
     }
 
     /**
      * Check rate limit for tenant-level operations.
      */
-    public boolean isAllowedForTenant(String tenantId, String operation, int limit, int windowSeconds) {
+    public Mono<Boolean> isAllowedForTenant(String tenantId, String operation, int limit, int windowSeconds) {
         return isAllowed("tenant:" + tenantId + ":" + operation, limit, windowSeconds);
     }
 
     /**
      * Get remaining requests for a key.
      */
-    public long getRemainingRequests(String key, int limit) {
-        return check(key, limit, 60).remaining();
+    public Mono<Long> getRemainingRequests(String key, int limit) {
+        return check(key, limit, 60).map(RateLimitDecision::remaining);
     }
 
     /**
      * Get time until rate limit resets (in seconds).
      */
-    public long getResetTime(String key) {
-        return check(key, Integer.MAX_VALUE, 60).resetSeconds();
+    public Mono<Long> getResetTime(String key) {
+        return check(key, Integer.MAX_VALUE, 60).map(RateLimitDecision::resetSeconds);
     }
 
     private RateLimitAlgorithm selected() {

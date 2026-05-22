@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @Validated
 @RestController
@@ -28,81 +29,90 @@ public class DocumentsController {
     }
 
     @PostMapping("/workspaces/{workspaceId}/documents")
-    public DocumentsFacade.DocumentView createDocument(
+    public Mono<DocumentsFacade.DocumentView> createDocument(
             @PathVariable String workspaceId,
             @Valid @RequestBody CreateDocumentRequest request
     ) {
-        return facade.createDocument(workspaceId, RequestContexts.current().userId(), request.title(), request.content());
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.createDocument(workspaceId, context.userId(), request.title(), request.content()));
     }
 
     @GetMapping("/workspaces/{workspaceId}/documents")
-    public List<DocumentsFacade.DocumentView> listDocuments(
+    public Mono<List<DocumentsFacade.DocumentView>> listDocuments(
             @PathVariable String workspaceId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        return facade.listDocuments(workspaceId, RequestContexts.current().userId(), page, size);
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.listDocuments(workspaceId, context.userId(), page, size));
     }
 
     @GetMapping("/workspaces/{workspaceId}/documents/search")
-    public List<DocumentsFacade.DocumentView> searchDocuments(
+    public Mono<List<DocumentsFacade.DocumentView>> searchDocuments(
             @PathVariable String workspaceId,
             @RequestParam String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        return facade.searchDocuments(workspaceId, RequestContexts.current().userId(), query, page, size);
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.searchDocuments(workspaceId, context.userId(), query, page, size));
     }
 
     @GetMapping("/v1/workspaces/{workspaceId}/documents/search")
-    public List<DocumentsFacade.DocumentView> searchDocumentsV1(
+    public Mono<List<DocumentsFacade.DocumentView>> searchDocumentsV1(
             @PathVariable String workspaceId,
             @RequestParam String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        return facade.searchDocumentsVersion("v1", workspaceId, RequestContexts.current().userId(), query, page, size);
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.searchDocumentsVersion("v1", workspaceId, context.userId(), query, page, size));
     }
 
     @GetMapping("/v2/workspaces/{workspaceId}/documents/search")
-    public List<DocumentsFacade.DocumentView> searchDocumentsV2(
+    public Mono<List<DocumentsFacade.DocumentView>> searchDocumentsV2(
             @PathVariable String workspaceId,
             @RequestParam String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        return facade.searchDocumentsVersion("v2", workspaceId, RequestContexts.current().userId(), query, page, size);
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.searchDocumentsVersion("v2", workspaceId, context.userId(), query, page, size));
     }
 
     @GetMapping("/v3/workspaces/{workspaceId}/documents/search")
-    public List<DocumentsFacade.DocumentView> searchDocumentsV3(
+    public Mono<List<DocumentsFacade.DocumentView>> searchDocumentsV3(
             @PathVariable String workspaceId,
             @RequestParam String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        return facade.searchDocumentsVersion("v3", workspaceId, RequestContexts.current().userId(), query, page, size);
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.searchDocumentsVersion("v3", workspaceId, context.userId(), query, page, size));
     }
 
     @GetMapping("/documents/{documentId}")
-    public DocumentsFacade.DocumentView getDocument(@PathVariable String documentId) {
-        return facade.getDocument(documentId, RequestContexts.current().userId());
+    public Mono<DocumentsFacade.DocumentView> getDocument(@PathVariable String documentId) {
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.getDocument(documentId, context.userId()));
     }
 
     @PatchMapping("/documents/{documentId}")
-    public DocumentsFacade.DocumentView updateDocument(
+    public Mono<DocumentsFacade.DocumentView> updateDocument(
             @PathVariable String documentId,
             @Valid @RequestBody UpdateDocumentRequest request
     ) {
-        return facade.updateDocument(documentId, RequestContexts.current().userId(), request.title(), request.content(), request.status());
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.updateDocument(documentId, context.userId(), request.title(), request.content(), request.status()));
     }
 
     @PostMapping("/documents/{documentId}/comments")
-    public DocumentsFacade.DocumentCommentView addComment(
+    public Mono<DocumentsFacade.DocumentCommentView> addComment(
             @PathVariable String documentId,
             @Valid @RequestBody AddCommentRequest request
     ) {
-        return facade.addComment(documentId, RequestContexts.current().userId(), request.body());
+        return RequestContexts.currentReactive()
+                .flatMap(context -> facade.addComment(documentId, context.userId(), request.body()));
     }
 
     public record CreateDocumentRequest(@NotBlank @Size(max = 200) String title, @NotBlank @Size(max = 12000) String content) {

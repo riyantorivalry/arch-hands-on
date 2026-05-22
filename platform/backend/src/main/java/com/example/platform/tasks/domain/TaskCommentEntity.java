@@ -1,29 +1,24 @@
 package com.example.platform.tasks.domain;
 
 import com.example.platform.common.domain.AbstractAuditableEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "task_comments", indexes = {
-        @Index(name = "idx_task_comments_task", columnList = "task_id,created_at")
-})
+@Table("task_comments")
 public class TaskCommentEntity extends AbstractAuditableEntity {
 
     @Id
-    @Column(name = "comment_id", nullable = false, length = 64)
+    @Column("comment_id")
     private String commentId;
 
-    @Column(name = "task_id", nullable = false, length = 64)
+    @Column("task_id")
     private String taskId;
 
-    @Column(name = "author_user_id", nullable = false, length = 64)
+    @Column("author_user_id")
     private String authorUserId;
 
-    @Column(name = "body", nullable = false, length = 4000)
+    @Column("body")
     private String body;
 
     protected TaskCommentEntity() {
@@ -50,5 +45,10 @@ public class TaskCommentEntity extends AbstractAuditableEntity {
 
     public String getBody() {
         return body;
+    }
+
+    @Override
+    public Object getId() {
+        return commentId;
     }
 }

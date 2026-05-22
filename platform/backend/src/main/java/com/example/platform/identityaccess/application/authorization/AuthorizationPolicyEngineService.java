@@ -4,6 +4,7 @@ import com.example.platform.identityaccess.domain.MembershipEntity;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 @Service
 public class AuthorizationPolicyEngineService {
@@ -29,6 +30,14 @@ public class AuthorizationPolicyEngineService {
 
     public AuthorizationDecision decide(String engine, MembershipEntity membership, AuthorizationDecisionRequest request) {
         return engine(engine).decide(membership, request);
+    }
+
+    public Mono<AuthorizationDecision> decideReactive(MembershipEntity membership, AuthorizationDecisionRequest request) {
+        return engine(mode).decideReactive(membership, request);
+    }
+
+    public Mono<AuthorizationDecision> decideReactive(String engine, MembershipEntity membership, AuthorizationDecisionRequest request) {
+        return engine(engine).decideReactive(membership, request);
     }
 
     public AuthorizationPolicyEngine engine(String engine) {

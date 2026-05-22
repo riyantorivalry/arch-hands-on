@@ -4,12 +4,12 @@ import com.example.platform.common.domain.DomainEvent;
 import com.example.platform.common.domain.DomainEventPublisher;
 import com.example.platform.common.infrastructure.observability.BusinessMetricsCollector;
 import io.micrometer.core.instrument.Timer;
-import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 /**
  * In-process event publisher for Phase 1.
@@ -45,27 +45,21 @@ public class InProcessDomainEventPublisher implements DomainEventPublisher {
     }
 
     @Override
-    public void publish(DomainEvent event) {
-        LOGGER.debug("Publishing domain event: type={}, eventId={}, aggregateId={}",
-                event.getEventType(), event.getEventId(), event.getAggregateId());
-        Timer.Sample sample = metricsCollector.startEventPublishingTimer();
-        try {
-            applicationEventPublisher.publishEvent(event);
-            metricsCollector.recordEventPublished();
-        } catch (RuntimeException e) {
-            metricsCollector.recordEventFailed();
-            throw e;
-        } finally {
-            metricsCollector.stopEventPublishingTimer(sample);
-        }
-    }
-
-    @Override
-    public void publishAll(List<DomainEvent> events) {
-        LOGGER.debug("Publishing {} domain events", events.size());
-        for (DomainEvent event : events) {
-            publish(event);
-        }
+    public Mono<Void> publish(DomainEvent event) {
+        return Mono.fromRunnable(() -> {
+            LOGGER.debug("Publishing domain event: type={}, eventId={}, aggregateId={}",
+                    event.getEventType(), event.getEventId(), event.getAggregateId());
+            Timer.Sample sample = metricsCollector.startEventPublishingTimer();
+            try {
+                applicationEventPublisher.publishEvent(event);
+                metricsCollector.recordEventPublished();
+            } catch (RuntimeException e) {
+                metricsCollector.recordEventFailed();
+                throw e;
+            } finally {
+                metricsCollector.stopEventPublishingTimer(sample);
+            }
+        });
     }
 }
 

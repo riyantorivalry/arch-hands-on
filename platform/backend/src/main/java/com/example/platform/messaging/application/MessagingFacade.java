@@ -18,6 +18,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 @Service
 public class MessagingFacade {
@@ -51,111 +52,121 @@ public class MessagingFacade {
         this.domainEventPublisher = domainEventPublisher;
     }
 
-    @Transactional
-    public ChannelView createChannel(String workspaceId, String actorUserId, String channelName) {
-        var membership = requireActiveMembership(workspaceId, actorUserId);
-        authorizationService.requireWorkspaceManager(membership);
-        var workspace = workspaceRepository.findById(workspaceId)
-                .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
-        ChannelEntity channel = channelRepository.save(new ChannelEntity(
-                "channel-" + slugify(channelName),
-                membership.getTenantId(),
-                workspace.getWorkspaceId(),
-                channelName
-        ));
-        auditLogger.logWrite("messaging", "create", "channel", channel.getChannelId(), "SUCCESS");
-        return toChannelView(channel);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<ChannelView> createChannel(String workspaceId, String actorUserId, String channelName) {
+        return requireActiveMembership(workspaceId, actorUserId)
+                .flatMap(membership -> {
+                    return authorizationService.requireWorkspaceManager(membership)
+                            .then(workspaceRepository.findById(workspaceId))
+                            .switchIfEmpty(Mono.error(new IllegalArgumentException("Workspace not found: " + workspaceId)))
+                            .flatMap(workspace -> channelRepository.save(new ChannelEntity(
+                                    "channel-" + slugify(channelName),
+                                    membership.getTenantId(),
+                                    workspace.getWorkspaceId(),
+                                    channelName
+                            )));
+                })
+                .doOnNext(channel -> auditLogger.logWrite("messaging", "create", "channel", channel.getChannelId(), "SUCCESS"))
+                .map(this::toChannelView);
     }
 
-    @Transactional(readOnly = true)
-    public List<ChannelView> listChannels(String workspaceId) {
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<List<ChannelView>> listChannels(String workspaceId) {
         return listChannels(workspaceId, null, 0, DEFAULT_PAGE_SIZE);
     }
 
-    @Transactional(readOnly = true)
-    public List<ChannelView> listChannels(String workspaceId, String userId, int page, int size) {
-        if (userId != null) {
-            requireActiveMembership(workspaceId, userId);
-        }
-        return channelRepository.findByWorkspaceIdOrderByNameAsc(workspaceId, pageRequest(page, size)).stream()
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<List<ChannelView>> listChannels(String workspaceId, String userId, int page, int size) {
+        Mono<Void> authorized = userId == null ? Mono.empty() : requireActiveMembership(workspaceId, userId).then();
+        Pageable pageable = pageRequest(page, size);
+        return authorized.thenMany(channelRepository.findByWorkspaceIdOrderByNameAsc(
+                        workspaceId,
+                        pageable.getPageSize(),
+                        pageable.getOffset()
+                ))
                 .map(this::toChannelView)
-                .toList();
+                .collectList();
     }
 
-    @Transactional
-    public MessageView postMessage(String workspaceId, String channelId, String authorUserId, String body) {
-        var membership = requireActiveMembership(workspaceId, authorUserId);
-        var channel = channelRepository.findByChannelIdAndWorkspaceId(channelId, workspaceId)
-                .orElseThrow(() -> new IllegalArgumentException("Channel not found in workspace " + workspaceId));
-        MessageEntity saved = messageRepository.save(new MessageEntity(
-                "message-" + UUID.randomUUID(),
-                membership.getTenantId(),
-                workspaceId,
-                channel.getChannelId(),
-                authorUserId,
-                body,
-                null
-        ));
-        auditLogger.logWrite("messaging", "create", "message", saved.getMessageId(), "SUCCESS");
-        
-        // Publish domain event
-        domainEventPublisher.publish(new MessagePostedEvent(
-                membership.getTenantId(),
-                saved.getMessageId(),
-                channel.getChannelId(),
-                authorUserId,
-                body
-        ));
-        
-        return toMessageView(saved);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<MessageView> postMessage(String workspaceId, String channelId, String authorUserId, String body) {
+        return requireActiveMembership(workspaceId, authorUserId)
+                .flatMap(membership -> channelRepository.findByChannelIdAndWorkspaceId(channelId, workspaceId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Channel not found in workspace " + workspaceId)))
+                        .flatMap(channel -> messageRepository.save(new MessageEntity(
+                                        "message-" + UUID.randomUUID(),
+                                        membership.getTenantId(),
+                                        workspaceId,
+                                        channel.getChannelId(),
+                                        authorUserId,
+                                        body,
+                                        null
+                                ))
+                                .flatMap(saved -> {
+                                    auditLogger.logWrite("messaging", "create", "message", saved.getMessageId(), "SUCCESS");
+                                    return domainEventPublisher.publish(new MessagePostedEvent(
+                                            membership.getTenantId(),
+                                            saved.getMessageId(),
+                                            channel.getChannelId(),
+                                            authorUserId,
+                                            body
+                                    )).thenReturn(saved);
+                                })))
+                .map(this::toMessageView);
     }
 
-    @Transactional(readOnly = true)
-    public List<MessageView> listMessages(String channelId) {
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<List<MessageView>> listMessages(String channelId) {
         return listMessages(channelId, null, 0, DEFAULT_PAGE_SIZE);
     }
 
-    @Transactional(readOnly = true)
-    public List<MessageView> listMessages(String channelId, String userId, int page, int size) {
-        var channel = channelRepository.findById(channelId)
-                .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + channelId));
-        if (userId != null) {
-            requireActiveMembership(channel.getWorkspaceId(), userId);
-        }
-        return messageRepository.findByChannelIdOrderByCreatedAtAsc(channelId, pageRequest(page, size)).stream()
+    @Transactional(transactionManager = "connectionFactoryTransactionManager", readOnly = true)
+    public Mono<List<MessageView>> listMessages(String channelId, String userId, int page, int size) {
+        Pageable pageable = pageRequest(page, size);
+        return channelRepository.findById(channelId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Channel not found: " + channelId)))
+                .flatMapMany(channel -> {
+                    Mono<Void> authorized = userId == null ? Mono.empty() : requireActiveMembership(channel.getWorkspaceId(), userId).then();
+                    return authorized.thenMany(messageRepository.findByChannelIdOrderByCreatedAtAsc(
+                            channelId,
+                            pageable.getPageSize(),
+                            pageable.getOffset()
+                    ));
+                })
                 .map(this::toMessageView)
-                .toList();
+                .collectList();
     }
 
-    @Transactional
-    public MessageView replyToMessage(String workspaceId, String messageId, String authorUserId, String body) {
-        var membership = requireActiveMembership(workspaceId, authorUserId);
-        var parent = messageRepository.findById(messageId)
-                .orElseThrow(() -> new IllegalArgumentException("Parent message not found: " + messageId));
-        if (!workspaceId.equals(parent.getWorkspaceId())) {
-            throw new IllegalArgumentException("Parent message not found in workspace " + workspaceId);
-        }
-        MessageEntity saved = messageRepository.save(new MessageEntity(
-                "message-" + UUID.randomUUID(),
-                membership.getTenantId(),
-                workspaceId,
-                parent.getChannelId(),
-                authorUserId,
-                body,
-                parent.getMessageId()
-        ));
-        auditLogger.logWrite("messaging", "reply", "message", saved.getMessageId(), "SUCCESS");
-        
-        // Publish domain event
-        domainEventPublisher.publish(new MessagePostedEvent(
-                membership.getTenantId(),
-                saved.getMessageId(),
-                parent.getChannelId(),
-                authorUserId,
-                body
-        ));
-        
-        return toMessageView(saved);
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<MessageView> replyToMessage(String workspaceId, String messageId, String authorUserId, String body) {
+        return requireActiveMembership(workspaceId, authorUserId)
+                .flatMap(membership -> messageRepository.findById(messageId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Parent message not found: " + messageId)))
+                        .flatMap(parent -> {
+                            if (!workspaceId.equals(parent.getWorkspaceId())) {
+                                return Mono.error(new IllegalArgumentException("Parent message not found in workspace " + workspaceId));
+                            }
+                            return messageRepository.save(new MessageEntity(
+                                            "message-" + UUID.randomUUID(),
+                                            membership.getTenantId(),
+                                            workspaceId,
+                                            parent.getChannelId(),
+                                            authorUserId,
+                                            body,
+                                            parent.getMessageId()
+                                    ))
+                                    .flatMap(saved -> {
+                                        auditLogger.logWrite("messaging", "reply", "message", saved.getMessageId(), "SUCCESS");
+                                        return domainEventPublisher.publish(new MessagePostedEvent(
+                                                membership.getTenantId(),
+                                                saved.getMessageId(),
+                                                parent.getChannelId(),
+                                                authorUserId,
+                                                body
+                                        )).thenReturn(saved);
+                                    });
+                        }))
+                .map(this::toMessageView);
     }
 
     public record ChannelView(String channelId, String workspaceId, String name) {
@@ -186,13 +197,15 @@ public class MessagingFacade {
                 .replaceAll("(^-|-$)", "");
     }
 
-    private com.example.platform.identityaccess.domain.MembershipEntity requireActiveMembership(String workspaceId, String userId) {
-        var membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new AuthorizationDeniedException("User is not a member of workspace " + workspaceId));
-        if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new IllegalStateException("Membership is not active for user " + userId);
-        }
-        return membership;
+    private Mono<com.example.platform.identityaccess.domain.MembershipEntity> requireActiveMembership(String workspaceId, String userId) {
+        return membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                .switchIfEmpty(Mono.error(new AuthorizationDeniedException("User is not a member of workspace " + workspaceId)))
+                .flatMap(membership -> {
+                    if (membership.getStatus() != MembershipStatus.ACTIVE) {
+                        return Mono.error(new IllegalStateException("Membership is not active for user " + userId));
+                    }
+                    return Mono.just(membership);
+                });
     }
 
     private Pageable pageRequest(int page, int size) {

@@ -1,10 +1,10 @@
 package com.example.platform.tenantmanagement.infrastructure;
 
 import com.example.platform.tenantmanagement.domain.WorkspaceSettingsEntity;
-import java.util.Optional;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Mono;
 
-public interface WorkspaceSettingsRepository extends JpaRepository<WorkspaceSettingsEntity, String> {
+public interface WorkspaceSettingsRepository extends ReactiveCrudRepository<WorkspaceSettingsEntity, String> {
 
-    Optional<WorkspaceSettingsEntity> findByWorkspaceIdAndTenantId(String workspaceId, String tenantId);
+    Mono<WorkspaceSettingsEntity> findByWorkspaceIdAndTenantId(String workspaceId, String tenantId);
 }

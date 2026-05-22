@@ -3,6 +3,7 @@ package com.example.platform.common.infrastructure.cache;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 @Component
 public class CacheService {
@@ -22,35 +23,35 @@ public class CacheService {
         return mode;
     }
 
-    public Object get(String key) {
+    public Mono<Object> get(String key) {
         return selected().get(key);
     }
 
-    public void set(String key, Object value, long ttlSeconds) {
-        selected().set(key, value, ttlSeconds);
+    public Mono<Void> set(String key, Object value, long ttlSeconds) {
+        return selected().set(key, value, ttlSeconds);
     }
 
-    public void set(String key, Object value) {
-        selected().set(key, value);
+    public Mono<Void> set(String key, Object value) {
+        return selected().set(key, value);
     }
 
-    public void delete(String key) {
-        selected().delete(key);
+    public Mono<Void> delete(String key) {
+        return selected().delete(key);
     }
 
-    public void deletePattern(String pattern) {
-        selected().deletePattern(pattern);
+    public Mono<Void> deletePattern(String pattern) {
+        return selected().deletePattern(pattern);
     }
 
-    public boolean exists(String key) {
+    public Mono<Boolean> exists(String key) {
         return selected().exists(key);
     }
 
-    public long increment(String key, long ttlSeconds) {
+    public Mono<Long> increment(String key, long ttlSeconds) {
         return selected().increment(key, ttlSeconds);
     }
 
-    public long getTtl(String key) {
+    public Mono<Long> getTtl(String key) {
         return selected().getTtl(key);
     }
 

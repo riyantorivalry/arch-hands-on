@@ -1,29 +1,27 @@
 package com.example.platform.common.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.MappedSuperclass;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import java.time.Instant;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Column;
 
-@MappedSuperclass
-public abstract class AbstractAuditableEntity {
+public abstract class AbstractAuditableEntity implements Persistable<Object> {
 
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column("created_at")
     private Instant createdAt;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column("updated_at")
     private Instant updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void touchForCreate() {
         Instant now = Instant.now();
-        createdAt = now;
+        if (createdAt == null) {
+            createdAt = now;
+        }
         updatedAt = now;
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void touchForUpdate() {
         updatedAt = Instant.now();
     }
 
@@ -33,5 +31,11 @@ public abstract class AbstractAuditableEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    @Override
+    @Transient
+    public boolean isNew() {
+        return createdAt == null;
     }
 }

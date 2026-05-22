@@ -1,10 +1,10 @@
 package com.example.platform.identityaccess.infrastructure;
 
 import com.example.platform.identityaccess.domain.AuthorizationPolicyRuleEntity;
-import java.util.List;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Flux;
 
-public interface AuthorizationPolicyRuleRepository extends JpaRepository<AuthorizationPolicyRuleEntity, String> {
+public interface AuthorizationPolicyRuleRepository extends ReactiveCrudRepository<AuthorizationPolicyRuleEntity, String> {
 
-    List<AuthorizationPolicyRuleEntity> findByEnabledTrueOrderByPriorityAscRuleIdAsc();
+    Flux<AuthorizationPolicyRuleEntity> findByEnabledTrueOrderByPriorityAscRuleIdAsc();
 }

@@ -49,10 +49,10 @@ public class EventRealtimeBroadcaster {
 
     @EventListener
     public void onMessagePosted(MessagePostedEvent event) {
-        String workspaceId = channelRepository.findById(event.getChannelId())
+        channelRepository.findById(event.getChannelId())
                 .map(channel -> channel.getWorkspaceId())
-                .orElse(null);
-        broadcastEventToWorkspace(workspaceId, event.getTenantId(), event);
+                .defaultIfEmpty("")
+                .subscribe(workspaceId -> broadcastEventToWorkspace(workspaceId.isBlank() ? null : workspaceId, event.getTenantId(), event));
     }
 
     @EventListener
