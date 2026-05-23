@@ -49,6 +49,8 @@ Common variables:
 | `RAMP_DOWN` | `15s` or `30s` | Ramp-down duration, depending on script |
 | `P95_MS` | `750` or `1000` | Default p95 threshold, depending on script |
 | `THINK_TIME_SECONDS` | `0.1` or `0.2` | Sleep time between iterations |
+| `HTML_REPORT` | script-specific file in the current working directory | HTML report output path |
+| `JSON_REPORT` | unset | Optional raw k6 summary JSON output path |
 
 Comparison script variables:
 
@@ -144,17 +146,35 @@ Primary questions this workload answers:
 
 ## Capturing Results
 
-Create a result folder per run:
+The scripts generate a production-ready HTML summary in the current working directory by default:
+
+- `k6-collaboration-apis-report.html`
+- `k6-comparison-endpoints-report.html`
+
+Each report includes an executive summary, configured run metadata, threshold status, and a per-API response-time table with request count, failure rate, average, min, median, p90, p95, p99, and max latency.
+
+Use `HTML_REPORT` when you want a unique archived report file per run. Create the target directory first because k6 does not create parent directories from `handleSummary`:
 
 ```bash
 mkdir -p docs/benchmarks/results
+
+k6 run \
+  -e HTML_REPORT=docs/benchmarks/results/collaboration-apis-2026-05-23.html \
+  docs/benchmarks/k6/collaboration-apis.js
 ```
 
-Save k6 output:
+PowerShell equivalent:
+
+```powershell
+New-Item -ItemType Directory -Force docs/benchmarks/results
+```
+
+Save the raw k6 summary JSON as well:
 
 ```bash
 k6 run \
-  --summary-export docs/benchmarks/results/k6-summary.json \
+  -e HTML_REPORT=docs/benchmarks/results/collaboration-apis-report.html \
+  -e JSON_REPORT=docs/benchmarks/results/collaboration-apis-summary.json \
   docs/benchmarks/k6/collaboration-apis.js
 ```
 

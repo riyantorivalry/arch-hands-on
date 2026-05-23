@@ -1,6 +1,7 @@
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 import exec from 'k6/execution';
+import { createEndpointRegistry, createHtmlSummary, withUnknownEndpoint } from './reporting.js';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
 const SUITE = __ENV.SUITE || 'all';
@@ -11,6 +12,7 @@ const ANALYTICS_VERSIONS = listEnv('ANALYTICS_VERSIONS', 'v1');
 const REALTIME_VERSIONS = listEnv('REALTIME_VERSIONS', 'v1');
 const SEARCH_VERSIONS = listEnv('SEARCH_VERSIONS', 'v1,v2,v3');
 const THINK_TIME_SECONDS = Number(__ENV.THINK_TIME_SECONDS || '0.1');
+const endpointMetrics = createEndpointRegistry(comparisonEndpointLabels());
 
 export const options = {
   scenarios: {
@@ -27,7 +29,26 @@ export const options = {
     http_req_failed: ['rate<0.01'],
     http_req_duration: [`p(95)<${Number(__ENV.P95_MS || '750')}`],
   },
+  summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
 };
+
+export function handleSummary(data) {
+  return createHtmlSummary(data, endpointMetrics, {
+    title: 'k6 Architecture Comparison API Report',
+    reportPath: __ENV.HTML_REPORT || 'k6-comparison-endpoints-report.html',
+    jsonReportPath: __ENV.JSON_REPORT,
+    latencyBudgetMs: Number(__ENV.P95_MS || '750'),
+    metadata: {
+      'Base URL': BASE_URL,
+      Suite: SUITE,
+      'Virtual users': Number(__ENV.VUS || '10'),
+      'Ramp up': __ENV.RAMP_UP || '30s',
+      Hold: __ENV.HOLD || '1m',
+      'Ramp down': __ENV.RAMP_DOWN || '15s',
+      'p95 budget': `${Number(__ENV.P95_MS || '750')} ms`,
+    },
+  });
+}
 
 export function setup() {
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
@@ -36,7 +57,7 @@ export function setup() {
   const ownerUserId = `user-k6-owner-${suffix}`;
   const memberUserId = `user-k6-member-${suffix}`;
 
-  const createTenant = postJson('/api/tenants', null, {
+  const createTenant = postJson('POST /api/tenants', '/api/tenants', null, {
     tenantName,
     workspaceName,
     ownerUserId,
@@ -48,7 +69,7 @@ export function setup() {
   const tenant = createTenant.json();
   const ownerToken = login(ownerUserId, tenant.workspaceId);
 
-  const createMember = postJson(`/api/workspaces/${tenant.workspaceId}/memberships`, ownerToken, {
+  const createMember = postJson('POST /api/workspaces/{workspaceId}/memberships', `/api/workspaces/${tenant.workspaceId}/memberships`, ownerToken, {
     userId: memberUserId,
     email: `${memberUserId}@example.com`,
     displayName: 'K6 Member',
@@ -58,13 +79,13 @@ export function setup() {
 
   const memberToken = login(memberUserId, tenant.workspaceId);
 
-  const document = postJson(`/api/workspaces/${tenant.workspaceId}/documents`, ownerToken, {
+  const document = postJson('POST /api/workspaces/{workspaceId}/documents', `/api/workspaces/${tenant.workspaceId}/documents`, ownerToken, {
     title: `K6 Architecture Notes ${suffix}`,
     content: 'K6 benchmark document for search analytics realtime comparison',
   });
   expect(document, 'create document', 200);
 
-  const search = http.get(`${BASE_URL}/api/v1/workspaces/${tenant.workspaceId}/documents/search?query=k6`, authHeaders(ownerToken));
+  const search = getJson('GET /api/v1/workspaces/{workspaceId}/documents/search', `/api/v1/workspaces/${tenant.workspaceId}/documents/search?query=k6`, ownerToken);
   expect(search, 'seed search event', 200);
 
   return {
@@ -104,7 +125,7 @@ function authorizationModels(ctx) {
   const body = authorizationRequest(ctx);
 
   group('authorization model: rbac v1', () => {
-    const res = postJson(`/api/v1/workspaces/${ctx.workspaceId}/authorization/decisions`, ctx.memberToken, body);
+    const res = postJson('POST /api/v1/workspaces/{workspaceId}/authorization/decisions', `/api/v1/workspaces/${ctx.workspaceId}/authorization/decisions`, ctx.memberToken, body);
     check(res, {
       'rbac v1 returned 200': (r) => r.status === 200,
       'rbac v1 strategy': (r) => r.status === 200 && r.json('strategy') === 'rbac',
@@ -112,7 +133,7 @@ function authorizationModels(ctx) {
   });
 
   group('authorization model: abac/opa v2', () => {
-    const res = postJson(`/api/v2/workspaces/${ctx.workspaceId}/authorization/decisions`, ctx.memberToken, body);
+    const res = postJson('POST /api/v2/workspaces/{workspaceId}/authorization/decisions', `/api/v2/workspaces/${ctx.workspaceId}/authorization/decisions`, ctx.memberToken, body);
     check(res, {
       'abac v2 returned 200': (r) => r.status === 200,
       'abac v2 strategy': (r) => r.status === 200 && r.json('strategy') === 'abac-opa',
@@ -124,7 +145,7 @@ function authorizationEngines(ctx) {
   const body = authorizationRequest(ctx);
   for (const engine of AUTH_ENGINES) {
     group(`authorization engine: ${engine}`, () => {
-      const res = postJson(`/api/benchmarks/authorization/${engine}/decisions`, ctx.memberToken, body);
+      const res = postJson(`POST /api/benchmarks/authorization/${engine}/decisions`, `/api/benchmarks/authorization/${engine}/decisions`, ctx.memberToken, body);
       check(res, {
         [`${engine} returned 200`]: (r) => r.status === 200,
         [`${engine} strategy present`]: (r) => r.status === 200 && typeof r.json('strategy') === 'string',
@@ -138,7 +159,7 @@ function cacheStrategies(ctx) {
     const key = `k6-cache-${strategy}-${exec.vu.idInTest}-${exec.scenario.iterationInTest}`;
 
     group(`cache strategy: ${strategy}`, () => {
-      const setRes = postJson(`/api/benchmarks/cache/${strategy}/entries`, ctx.ownerToken, {
+      const setRes = postJson(`POST /api/benchmarks/cache/${strategy}/entries`, `/api/benchmarks/cache/${strategy}/entries`, ctx.ownerToken, {
         key,
         value: {
           source: 'k6',
@@ -149,13 +170,13 @@ function cacheStrategies(ctx) {
       });
       check(setRes, { [`${strategy} cache set 200`]: (r) => r.status === 200 });
 
-      const getRes = http.get(`${BASE_URL}/api/benchmarks/cache/${strategy}/entries/${encodeURIComponent(key)}`, authHeaders(ctx.ownerToken));
+      const getRes = getJson(`GET /api/benchmarks/cache/${strategy}/entries/{key}`, `/api/benchmarks/cache/${strategy}/entries/${encodeURIComponent(key)}`, ctx.ownerToken);
       check(getRes, {
         [`${strategy} cache get 200`]: (r) => r.status === 200,
         [`${strategy} cache hit`]: (r) => r.status === 200 && r.json('hit') === true,
       });
 
-      const incrementRes = postJson(`/api/benchmarks/cache/${strategy}/counters/${encodeURIComponent(key)}-counter/increment`, ctx.ownerToken, {
+      const incrementRes = postJson(`POST /api/benchmarks/cache/${strategy}/counters/{key}/increment`, `/api/benchmarks/cache/${strategy}/counters/${encodeURIComponent(key)}-counter/increment`, ctx.ownerToken, {
         ttlSeconds: 60,
       });
       check(incrementRes, { [`${strategy} counter increment 200`]: (r) => r.status === 200 });
@@ -167,7 +188,7 @@ function rateLimitAlgorithms(ctx) {
   for (const algorithm of RATE_LIMIT_ALGORITHMS) {
     group(`rate limit algorithm: ${algorithm}`, () => {
       const key = `k6-rate-${algorithm}-${exec.vu.idInTest}-${exec.scenario.iterationInTest}`;
-      const res = postJson(`/api/benchmarks/rate-limit/${algorithm}/decisions`, ctx.ownerToken, {
+      const res = postJson(`POST /api/benchmarks/rate-limit/${algorithm}/decisions`, `/api/benchmarks/rate-limit/${algorithm}/decisions`, ctx.ownerToken, {
         key,
         limit: Number(__ENV.RATE_LIMIT || '1000'),
         windowSeconds: Number(__ENV.RATE_LIMIT_WINDOW_SECONDS || '60'),
@@ -185,7 +206,7 @@ function realtimePolling(ctx) {
     return;
   }
   group('realtime delivery: polling v1', () => {
-    const res = http.get(`${BASE_URL}/api/v1/workspaces/${ctx.workspaceId}/events?since=0`, authHeaders(ctx.ownerToken));
+    const res = getJson('GET /api/v1/workspaces/{workspaceId}/events', `/api/v1/workspaces/${ctx.workspaceId}/events?since=0`, ctx.ownerToken);
     check(res, {
       'polling returned 200': (r) => r.status === 200,
       'polling cursor returned': (r) => r.status === 200 && typeof r.json('nextCursor') === 'number',
@@ -196,7 +217,7 @@ function realtimePolling(ctx) {
 function analyticsStorage(ctx) {
   for (const version of ANALYTICS_VERSIONS) {
     group(`analytics storage: ${version}`, () => {
-      const res = http.get(`${BASE_URL}/api/${version}/tenants/${ctx.tenantId}/analytics/events`, authHeaders(ctx.ownerToken));
+      const res = getJson(`GET /api/${version}/tenants/{tenantId}/analytics/events`, `/api/${version}/tenants/${ctx.tenantId}/analytics/events`, ctx.ownerToken);
       check(res, {
         [`analytics ${version} returned 200`]: (r) => r.status === 200,
         [`analytics ${version} array response`]: (r) => r.status === 200 && Array.isArray(r.json()),
@@ -208,7 +229,7 @@ function analyticsStorage(ctx) {
 function documentSearch(ctx) {
   for (const version of SEARCH_VERSIONS) {
     group(`document search: ${version}`, () => {
-      const res = http.get(`${BASE_URL}/api/${version}/workspaces/${ctx.workspaceId}/documents/search?query=k6`, authHeaders(ctx.ownerToken));
+      const res = getJson(`GET /api/${version}/workspaces/{workspaceId}/documents/search`, `/api/${version}/workspaces/${ctx.workspaceId}/documents/search?query=k6`, ctx.ownerToken);
       check(res, {
         [`search ${version} returned 200`]: (r) => r.status === 200,
         [`search ${version} array response`]: (r) => r.status === 200 && Array.isArray(r.json()),
@@ -218,7 +239,7 @@ function documentSearch(ctx) {
 }
 
 function login(userId, workspaceId) {
-  const res = postJson('/api/auth/login', null, { userId, workspaceId });
+  const res = postJson('POST /api/auth/login', '/api/auth/login', null, { userId, workspaceId });
   expect(res, `login ${userId}`, 200);
   return res.json('token');
 }
@@ -237,8 +258,14 @@ function authorizationRequest(ctx) {
   };
 }
 
-function postJson(path, token, body) {
-  return http.post(`${BASE_URL}${path}`, JSON.stringify(body), authHeaders(token));
+function getJson(label, path, token) {
+  const res = http.get(`${BASE_URL}${path}`, authHeaders(token));
+  return endpointMetrics.record(label, res);
+}
+
+function postJson(label, path, token, body) {
+  const res = http.post(`${BASE_URL}${path}`, JSON.stringify(body), authHeaders(token));
+  return endpointMetrics.record(label, res);
 }
 
 function authHeaders(token) {
@@ -267,4 +294,36 @@ function expect(res, label, status) {
   if (res.status !== status) {
     throw new Error(`${label} expected ${status}, got ${res.status}: ${res.body}`);
   }
+}
+
+function comparisonEndpointLabels() {
+  const labels = [
+    'POST /api/tenants',
+    'POST /api/auth/login',
+    'POST /api/workspaces/{workspaceId}/memberships',
+    'POST /api/workspaces/{workspaceId}/documents',
+    'POST /api/v1/workspaces/{workspaceId}/authorization/decisions',
+    'POST /api/v2/workspaces/{workspaceId}/authorization/decisions',
+    'GET /api/v1/workspaces/{workspaceId}/events',
+  ];
+
+  for (const engine of AUTH_ENGINES) {
+    labels.push(`POST /api/benchmarks/authorization/${engine}/decisions`);
+  }
+  for (const strategy of CACHE_STRATEGIES) {
+    labels.push(`POST /api/benchmarks/cache/${strategy}/entries`);
+    labels.push(`GET /api/benchmarks/cache/${strategy}/entries/{key}`);
+    labels.push(`POST /api/benchmarks/cache/${strategy}/counters/{key}/increment`);
+  }
+  for (const algorithm of RATE_LIMIT_ALGORITHMS) {
+    labels.push(`POST /api/benchmarks/rate-limit/${algorithm}/decisions`);
+  }
+  for (const version of ANALYTICS_VERSIONS) {
+    labels.push(`GET /api/${version}/tenants/{tenantId}/analytics/events`);
+  }
+  for (const version of SEARCH_VERSIONS) {
+    labels.push(`GET /api/${version}/workspaces/{workspaceId}/documents/search`);
+  }
+
+  return withUnknownEndpoint(labels);
 }

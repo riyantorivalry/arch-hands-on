@@ -5,3 +5,6 @@ target/
 .env
 node_modules/
 .next/
+k6-*-report.html
+docs/benchmarks/results/*
+!docs/benchmarks/results/.gitkeep
