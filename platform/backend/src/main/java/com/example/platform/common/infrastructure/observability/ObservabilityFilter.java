@@ -14,6 +14,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -33,6 +34,7 @@ public class ObservabilityFilter extends OncePerRequestFilter {
     private static final String TRACE_ID_MDC = "traceId";
     private static final String REQUEST_ID_MDC = "requestId";
     private static final String TENANT_ID_MDC = "tenantId";
+    private static final String SPAN_ID_MDC = "spanId";
     private static final String METHOD_MDC = "method";
     private static final String PATH_MDC = "path";
     private static final String STATUS_MDC = "status";
@@ -50,13 +52,21 @@ public class ObservabilityFilter extends OncePerRequestFilter {
 
         long startTime = System.currentTimeMillis();
         String correlationId = getOrCreateCorrelationId(request);
-        String traceId = getOrCreateTraceId(request);
+        Optional<Span> initialSpan = currentSpan();
+        String traceId = initialSpan
+                .map(span -> span.context().traceId())
+                .orElseGet(() -> request.getHeader(TRACE_ID_HEADER));
         String requestId = UUID.randomUUID().toString();
         String tenantId = request.getHeader(TENANT_ID_HEADER);
 
         // Set MDC values for logging
         MDC.put(CORRELATION_ID_MDC, correlationId);
-        MDC.put(TRACE_ID_MDC, traceId);
+        if (traceId != null && !traceId.isBlank()) {
+            MDC.put(TRACE_ID_MDC, traceId);
+        }
+        initialSpan.map(span -> span.context().spanId())
+                .filter(spanId -> !spanId.isBlank())
+                .ifPresent(spanId -> MDC.put(SPAN_ID_MDC, spanId));
         MDC.put(REQUEST_ID_MDC, requestId);
         if (tenantId != null) {
             MDC.put(TENANT_ID_MDC, tenantId);
@@ -66,7 +76,9 @@ public class ObservabilityFilter extends OncePerRequestFilter {
 
         // Add response headers for client to use
         response.setHeader(CORRELATION_ID_HEADER, correlationId);
-        response.setHeader(TRACE_ID_HEADER, traceId);
+        if (traceId != null && !traceId.isBlank()) {
+            response.setHeader(TRACE_ID_HEADER, traceId);
+        }
         response.setHeader(REQUEST_ID_HEADER, requestId);
 
         try {
@@ -77,6 +89,19 @@ public class ObservabilityFilter extends OncePerRequestFilter {
 
         } finally {
             long duration = System.currentTimeMillis() - startTime;
+            currentSpan().ifPresent(span -> {
+                String currentTraceId = span.context().traceId();
+                String currentSpanId = span.context().spanId();
+                if (currentTraceId != null && !currentTraceId.isBlank()) {
+                    MDC.put(TRACE_ID_MDC, currentTraceId);
+                    if (!response.isCommitted()) {
+                        response.setHeader(TRACE_ID_HEADER, currentTraceId);
+                    }
+                }
+                if (currentSpanId != null && !currentSpanId.isBlank()) {
+                    MDC.put(SPAN_ID_MDC, currentSpanId);
+                }
+            });
             MDC.put(STATUS_MDC, String.valueOf(response.getStatus()));
             MDC.put(DURATION_MDC, String.valueOf(duration));
 
@@ -103,22 +128,14 @@ public class ObservabilityFilter extends OncePerRequestFilter {
         return correlationId;
     }
 
-    private String getOrCreateTraceId(HttpServletRequest request) {
+    private Optional<Span> currentSpan() {
         if (tracer != null) {
             Span currentSpan = tracer.currentSpan();
             if (currentSpan != null && currentSpan.context() != null) {
-                String traceId = currentSpan.context().traceId();
-                if (traceId != null && !traceId.isBlank()) {
-                    return traceId;
-                }
+                return Optional.of(currentSpan);
             }
         }
-
-        String traceId = request.getHeader(TRACE_ID_HEADER);
-        if (traceId == null || traceId.isEmpty()) {
-            traceId = UUID.randomUUID().toString();
-        }
-        return traceId;
+        return Optional.empty();
     }
 
     @Override

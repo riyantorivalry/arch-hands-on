@@ -20,6 +20,26 @@ groups:
           summary: "Observability target is down"
           description: "{{ $labels.job }} target {{ $labels.instance }} has been down for 5 minutes."
 
+      - alert: AlloyCollectorMissing
+        expr: absent(up{job="alloy"} == 1)
+        for: 3m
+        labels:
+          severity: page
+          service: alloy
+        annotations:
+          summary: "Grafana Alloy collector is missing"
+          description: "Prometheus cannot scrape Alloy. Metrics, logs, and traces may stop flowing."
+
+      - alert: AlloyRemoteWriteFailures
+        expr: increase(prometheus_remote_storage_samples_failed_total{job="alloy"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: ticket
+          service: alloy
+        annotations:
+          summary: "Alloy remote write failures detected"
+          description: "Alloy failed to remote-write samples to Prometheus in the last 5 minutes."
+
   - name: platform-slo
     rules:
       - alert: HighHttp5xxErrorRate
@@ -50,6 +70,34 @@ groups:
         annotations:
           summary: "High backend p95 latency"
           description: "p95 HTTP latency has been above 500ms for 10 minutes."
+
+      - alert: TraceDerivedHighHttp5xxErrorRate
+        expr: |
+          (
+            sum(rate(traces_spanmetrics_calls_total{http_status_code=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(traces_spanmetrics_calls_total[5m])), 0.001)
+          ) > 0.02
+        for: 5m
+        labels:
+          severity: ticket
+          service: platform-backend
+        annotations:
+          summary: "Trace-derived 5xx rate is high"
+          description: "Span metrics show 5xx responses above 2% for 5 minutes."
+
+      - alert: TraceIngestionStopped
+        expr: |
+          sum(rate(http_server_requests_seconds_count{job="platform-backend",uri!~"/actuator.*"}[10m])) > 0
+          and
+          sum(rate(otelcol_receiver_accepted_spans{job="alloy"}[10m])) == 0
+        for: 15m
+        labels:
+          severity: ticket
+          service: platform-backend
+        annotations:
+          summary: "No spans received by Alloy"
+          description: "Alloy has not accepted spans for 15 minutes while the observability stack is running."
 
   - name: platform-runtime
     rules:

@@ -3,6 +3,106 @@ logging {
   format = "logfmt"
 }
 
+prometheus.remote_write "local" {
+  external_labels = {
+    environment = sys.env("PLATFORM_ENVIRONMENT"),
+    monitor     = "platform-observability",
+    collector   = "alloy",
+  }
+
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+
+    queue_config {
+      capacity             = 10000
+      max_shards           = 8
+      max_samples_per_send = 2000
+    }
+  }
+}
+
+prometheus.scrape "platform_backend" {
+  targets = [
+    {
+      __address__      = sys.env("PLATFORM_BACKEND_METRICS_TARGET"),
+      __metrics_path__ = "/actuator/prometheus",
+      job              = "platform-backend",
+      service          = "platform-backend",
+    },
+  ]
+
+  scrape_interval = "15s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.scrape "postgres_primary" {
+  targets = [
+    {
+      __address__ = "postgres-exporter-primary:9187",
+      job         = "postgres-primary",
+      service     = "postgres",
+      role        = "primary",
+      database    = "platform",
+    },
+  ]
+
+  scrape_interval = "15s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.scrape "postgres_replica" {
+  targets = [
+    {
+      __address__ = "postgres-exporter-replica:9187",
+      job         = "postgres-replica",
+      service     = "postgres",
+      role        = "replica",
+      database    = "platform",
+    },
+  ]
+
+  scrape_interval = "15s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.scrape "observability_services" {
+  targets = [
+    {
+      __address__ = "alertmanager:9093",
+      job         = "alertmanager",
+      service     = "alertmanager",
+    },
+    {
+      __address__      = "grafana:3000",
+      __metrics_path__ = "/metrics",
+      job              = "grafana",
+      service          = "grafana",
+    },
+    {
+      __address__ = "loki:3100",
+      job         = "loki",
+      service     = "loki",
+    },
+    {
+      __address__ = "tempo:3200",
+      job         = "tempo",
+      service     = "tempo",
+    },
+    {
+      __address__ = "pyroscope:4040",
+      job         = "pyroscope",
+      service     = "pyroscope",
+    },
+  ]
+
+  scrape_interval = "30s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.local.receiver]
+}
+
 otelcol.receiver.otlp "platform" {
   grpc {
     endpoint = "0.0.0.0:4317"
@@ -13,7 +113,8 @@ otelcol.receiver.otlp "platform" {
   }
 
   output {
-    traces = [otelcol.processor.memory_limiter.platform.input]
+    traces  = [otelcol.processor.memory_limiter.platform.input]
+    metrics = [otelcol.processor.memory_limiter.platform.input]
   }
 }
 
@@ -23,8 +124,51 @@ otelcol.processor.memory_limiter "platform" {
   spike_limit    = "128MiB"
 
   output {
-    traces = [otelcol.processor.batch.platform.input]
+    traces = [
+      otelcol.connector.spanmetrics.platform.input,
+      otelcol.processor.batch.platform.input,
+    ]
+    metrics = [otelcol.processor.batch.platform.input]
   }
+}
+
+otelcol.connector.spanmetrics "platform" {
+  dimension {
+    name    = "http.method"
+    default = "GET"
+  }
+
+  dimension {
+    name    = "http.route"
+    default = "unknown"
+  }
+
+  dimension {
+    name    = "http.status_code"
+    default = "0"
+  }
+
+  aggregation_temporality = "DELTA"
+  metrics_flush_interval  = "15s"
+  namespace               = "traces_spanmetrics"
+
+  histogram {
+    explicit {
+      buckets = ["25ms", "50ms", "100ms", "250ms", "500ms", "1s", "2.5s", "5s", "10s"]
+    }
+  }
+
+  output {
+    metrics = [otelcol.exporter.prometheus.spanmetrics.input]
+  }
+}
+
+otelcol.exporter.prometheus "spanmetrics" {
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+otelcol.exporter.prometheus "otlp_metrics" {
+  forward_to = [prometheus.remote_write.local.receiver]
 }
 
 otelcol.processor.batch "platform" {
@@ -32,7 +176,8 @@ otelcol.processor.batch "platform" {
   send_batch_size = 1024
 
   output {
-    traces = [otelcol.exporter.otlp.tempo.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+    metrics = [otelcol.exporter.prometheus.otlp_metrics.input]
   }
 }
 
@@ -71,7 +216,9 @@ loki.process "platform_json" {
       extracted_level          = "level",
       extracted_logger         = "logger_name",
       extracted_service        = "service",
+      extracted_environment    = "environment",
       extracted_trace_id       = "traceId",
+      extracted_span_id        = "spanId",
       extracted_correlation_id = "correlationId",
       extracted_tenant_id      = "tenantId",
     }
@@ -81,6 +228,7 @@ loki.process "platform_json" {
     values = {
       level        = "extracted_level",
       service_name = "extracted_service",
+      environment  = "extracted_environment",
     }
   }
 

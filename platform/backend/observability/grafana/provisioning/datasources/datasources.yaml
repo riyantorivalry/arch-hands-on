@@ -9,6 +9,9 @@ datasources:
     editable: false
     jsonData:
       httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: 3.0.0
       exemplarTraceIdDestinations:
         - name: trace_id
           datasourceUid: tempo
@@ -23,7 +26,7 @@ datasources:
       maxLines: 1000
       derivedFields:
         - name: TraceID
-          matcherRegex: '"traceId":"([a-f0-9]+)"'
+          matcherRegex: '"(?:traceId|trace_id)"\s*:\s*"([a-fA-F0-9]{16,32})"'
           datasourceUid: tempo
           url: '$${__value.raw}'
 
@@ -35,6 +38,10 @@ datasources:
     editable: false
     jsonData:
       httpMethod: GET
+      nodeGraph:
+        enabled: true
+      serviceMap:
+        datasourceUid: prometheus
       tracesToLogsV2:
         datasourceUid: loki
         filterByTraceID: true
@@ -42,8 +49,15 @@ datasources:
         tags:
           - key: service.name
             value: service_name
+          - key: deployment.environment
+            value: environment
       tracesToMetrics:
         datasourceUid: prometheus
+        tags:
+          - key: service.name
+            value: service_name
+          - key: http.route
+            value: http_route
 
   - name: Pyroscope
     uid: pyroscope

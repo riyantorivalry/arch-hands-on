@@ -11,6 +11,7 @@ import io.micrometer.core.instrument.binder.jvm.JvmMemoryMetrics;
 import io.micrometer.core.instrument.binder.jvm.JvmThreadMetrics;
 import io.micrometer.core.instrument.binder.system.ProcessorMetrics;
 import io.micrometer.core.instrument.config.MeterFilter;
+import io.micrometer.observation.ObservationPredicate;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -20,6 +21,7 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.http.server.observation.ServerRequestObservationContext;
 
 import java.util.Optional;
 
@@ -44,6 +46,20 @@ public class ObservabilityConfiguration {
     @Bean
     public MeterFilter httpServerRequestUriCardinalityLimit() {
         return MeterFilter.maximumAllowableTags("http.server.requests", "uri", 100, MeterFilter.deny());
+    }
+
+    /**
+     * Keep high-cardinality scrape noise out of traces and HTTP request metrics.
+     */
+    @Bean
+    public ObservationPredicate skipActuatorServerRequestObservations() {
+        return (name, context) -> {
+            if (context instanceof ServerRequestObservationContext serverContext) {
+                String path = serverContext.getCarrier().getRequestURI();
+                return !path.startsWith("/actuator");
+            }
+            return true;
+        };
     }
 
     /**
