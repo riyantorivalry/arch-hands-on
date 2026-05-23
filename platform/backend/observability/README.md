@@ -20,7 +20,7 @@ Contents
 Important notes
 - The compose file expects the backend to be accessible from the containers as `host.docker.internal:8080` (Windows/Mac). With Alloy as the collector, change `PLATFORM_BACKEND_METRICS_TARGET` in `.env` if Linux needs a different host address such as `172.17.0.1:8080`.
 - The PostgreSQL exporters expect the local primary and replica to be accessible as `host.docker.internal:5432` and `host.docker.internal:5433`. If using Linux, update `POSTGRES_PRIMARY_EXPORTER_URI` and `POSTGRES_REPLICA_EXPORTER_URI` in `.env`.
-- The backend should be started on port 8080 and write logs to `platform/backend/logs/*.json.log` so Alloy can pick them up.
+- The backend should be started on port 8080 and write JSON logs to either `platform/backend/logs/*.json.log` or repo-root `logs/*.json.log`; Alloy tails both paths for local runs launched from different working directories.
 - Copy `.env.example` to `.env` and set a real `GRAFANA_ADMIN_PASSWORD` before starting the stack.
 - This stack is not HA. For production, run Prometheus/Alertmanager/Loki/Tempo in their HA or managed forms, put TLS/auth in front of all UIs/APIs, and back Loki/Tempo with durable object storage.
 
@@ -54,9 +54,10 @@ Verify:
 - Alloy should be pushing JSON logs into Loki; in Grafana Explore you can query Loki with `{job="platform-backend-logs"}`
 - Spring Boot traces should flow through Alloy to Tempo when the backend runs with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces`
 - Local/default backend tracing samples every request so one-off requests such as `POST /api/auth/login` appear in Tempo. The `prod` Spring profile defaults to 10% sampling unless `MANAGEMENT_TRACING_SAMPLING_PROBABILITY` is set.
+- Tempo trace details should include application child spans for controller, service/facade, repository, and JDBC query work. JDBC spans include datasource, operation, statement type, query preview, success, and duration tags.
 - Trace-derived RED metrics should appear in Prometheus under `traces_spanmetrics_*` after traced traffic reaches Alloy.
 - JDBC timings should appear in Prometheus as `database_query_time_seconds_*` after API requests hit PostgreSQL
-- Flamegraphs should appear in Pyroscope/Grafana after starting the backend with profiling enabled
+- Flamegraphs should appear in Pyroscope/Grafana after starting the backend while Pyroscope is reachable. Local/default backend profiling is enabled by default and can be disabled with `PYROSCOPE_AGENT_ENABLED=false`; the `prod` profile keeps profiling disabled unless `PYROSCOPE_AGENT_ENABLED=true` is set.
 - Alertmanager should receive active Prometheus alerts from `prometheus/rules/alert_rules.yml`
 
 Backend runtime settings for full local observability:
@@ -64,7 +65,6 @@ Backend runtime settings for full local observability:
 ```powershell
 $env:MANAGEMENT_TRACING_SAMPLING_PROBABILITY="1.0"
 $env:OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="http://localhost:4318/v1/traces"
-$env:PYROSCOPE_AGENT_ENABLED="true"
 $env:PYROSCOPE_SERVER_ADDRESS="http://localhost:4040"
 $env:PYROSCOPE_APPLICATION_NAME="platform-backend"
 ```
@@ -80,10 +80,11 @@ The Pyroscope Java profiler depends on native async-profiler support. If it cann
 Troubleshooting
 - If backend metrics don't show, ensure `PLATFORM_BACKEND_METRICS_TARGET` is reachable from the Alloy container. On Windows/Mac `host.docker.internal:8080` works; on Linux you may need to use the host's IP.
 - If PostgreSQL metrics don't show, ensure the main `compose.yaml` Postgres services are running and the exporter URIs in `.env` point at reachable host/port pairs.
-- If logs aren't ingested, ensure `platform/backend/logs/*.json.log` exist and are mounted.
+- If logs aren't ingested, ensure `platform/backend/logs/*.json.log` or repo-root `logs/*.json.log` exist and are mounted.
 - If traces don't appear, confirm `management.otlp.tracing.endpoint` resolves to Alloy, tracing sampling is non-zero, and the backend was restarted after changing tracing environment variables.
+- If controller/service/repository/JDBC child spans don't appear, generate authenticated API traffic and open the resulting Tempo trace; the spans are emitted by backend AOP and datasource-proxy instrumentation.
 - If span metric panels are empty, generate HTTP traffic with tracing enabled and query `traces_spanmetrics_calls_total` in Prometheus.
-- If profile data does not appear, confirm Pyroscope is running, `PYROSCOPE_AGENT_ENABLED=true` is set for the backend process, and the Java profiler supports the current host OS.
+- If profile data does not appear, confirm Pyroscope is running, `PYROSCOPE_AGENT_ENABLED` has not been set to `false`, and the Java profiler supports the current host OS.
 - To re-create the stack:
 
 ```powershell

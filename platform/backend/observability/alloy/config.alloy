@@ -198,6 +198,14 @@ loki.source.file "platform_json_logs" {
       job           = "platform-backend-logs",
       service_name  = "platform-backend",
       environment   = "local",
+      log_location  = "platform-backend",
+    },
+    {
+      __path__      = "/var/log/platform-root/*.json.log",
+      job           = "platform-backend-logs",
+      service_name  = "platform-backend",
+      environment   = "local",
+      log_location  = "workspace-root",
     },
   ]
 
@@ -213,6 +221,7 @@ loki.process "platform_json" {
   stage.json {
     drop_malformed = true
     expressions = {
+      extracted_timestamp      = "timestamp",
       extracted_level          = "level",
       extracted_logger         = "logger_name",
       extracted_service        = "service",
@@ -222,6 +231,11 @@ loki.process "platform_json" {
       extracted_correlation_id = "correlationId",
       extracted_tenant_id      = "tenantId",
     }
+  }
+
+  stage.timestamp {
+    source = "extracted_timestamp"
+    format = "RFC3339Nano"
   }
 
   stage.labels {

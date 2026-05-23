@@ -2,6 +2,10 @@ package com.example.platform.common.infrastructure.observability;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -18,15 +22,36 @@ public class DatabaseQueryMetricsListener implements QueryExecutionListener {
 
     private final MeterRegistry meterRegistry;
     private final long slowQueryThresholdMs;
+    private final Tracer tracer;
+    private final ThreadLocal<Deque<QuerySpanContext>> querySpans = ThreadLocal.withInitial(ArrayDeque::new);
 
-    public DatabaseQueryMetricsListener(MeterRegistry meterRegistry, long slowQueryThresholdMs) {
+    public DatabaseQueryMetricsListener(MeterRegistry meterRegistry, long slowQueryThresholdMs, Tracer tracer) {
         this.meterRegistry = meterRegistry;
         this.slowQueryThresholdMs = slowQueryThresholdMs;
+        this.tracer = tracer;
     }
 
     @Override
     public void beforeQuery(ExecutionInfo execInfo, List<QueryInfo> queryInfoList) {
-        // Query timing is provided by datasource-proxy in afterQuery.
+        if (tracer == null) {
+            return;
+        }
+
+        String operation = queryOperation(queryInfoList);
+        String datasource = safeTag(execInfo.getDataSourceName(), "unknown");
+        String statementType = statementType(execInfo);
+        Span span = tracer.nextSpan()
+                .name("db." + operation)
+                .tag("db.system", "jdbc")
+                .tag("db.operation", operation)
+                .tag("db.statement", sqlPreview(queryInfoList))
+                .tag("db.datasource", datasource)
+                .tag("db.statement_type", statementType)
+                .tag("db.batch", String.valueOf(execInfo.isBatch()));
+
+        span.start();
+        Tracer.SpanInScope scope = tracer.withSpan(span);
+        querySpans.get().push(new QuerySpanContext(span, scope));
     }
 
     @Override
@@ -34,9 +59,7 @@ public class DatabaseQueryMetricsListener implements QueryExecutionListener {
         long elapsedMs = Math.max(execInfo.getElapsedTime(), 0L);
         String operation = queryOperation(queryInfoList);
         String datasource = safeTag(execInfo.getDataSourceName(), "unknown");
-        String statementType = execInfo.getStatementType() == null
-                ? "unknown"
-                : execInfo.getStatementType().name().toLowerCase(Locale.ROOT);
+        String statementType = statementType(execInfo);
         String success = String.valueOf(execInfo.getThrowable() == null);
 
         Timer.builder("database.query.time")
@@ -51,6 +74,50 @@ public class DatabaseQueryMetricsListener implements QueryExecutionListener {
 
         if (elapsedMs >= slowQueryThresholdMs || execInfo.getThrowable() != null) {
             logSlowOrFailedQuery(execInfo, queryInfoList, elapsedMs, operation, datasource);
+        }
+
+        finishQuerySpan(execInfo, queryInfoList, elapsedMs, operation, datasource, statementType, success);
+    }
+
+    private void finishQuerySpan(
+            ExecutionInfo execInfo,
+            List<QueryInfo> queryInfoList,
+            long elapsedMs,
+            String operation,
+            String datasource,
+            String statementType,
+            String success
+    ) {
+        if (tracer == null) {
+            return;
+        }
+
+        QuerySpanContext spanContext = pollQuerySpan();
+        Span span;
+        Tracer.SpanInScope scope;
+        if (spanContext == null) {
+            span = tracer.nextSpan().name("db." + operation).start();
+            scope = tracer.withSpan(span);
+        } else {
+            span = spanContext.span();
+            scope = spanContext.scope();
+        }
+
+        try {
+            span.tag("db.system", "jdbc");
+            span.tag("db.operation", operation);
+            span.tag("db.statement", sqlPreview(queryInfoList));
+            span.tag("db.datasource", datasource);
+            span.tag("db.statement_type", statementType);
+            span.tag("db.batch", String.valueOf(execInfo.isBatch()));
+            span.tag("db.success", success);
+            span.tag("platform.duration_ms", String.valueOf(elapsedMs));
+            if (execInfo.getThrowable() != null) {
+                span.error(execInfo.getThrowable());
+            }
+        } finally {
+            scope.close();
+            span.end();
         }
     }
 
@@ -134,7 +201,25 @@ public class DatabaseQueryMetricsListener implements QueryExecutionListener {
         return queryInfoList.get(0).getQuery();
     }
 
+    private String statementType(ExecutionInfo execInfo) {
+        return execInfo.getStatementType() == null
+                ? "unknown"
+                : execInfo.getStatementType().name().toLowerCase(Locale.ROOT);
+    }
+
     private String safeTag(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private QuerySpanContext pollQuerySpan() {
+        Deque<QuerySpanContext> spans = querySpans.get();
+        QuerySpanContext spanContext = spans.poll();
+        if (spans.isEmpty()) {
+            querySpans.remove();
+        }
+        return spanContext;
+    }
+
+    private record QuerySpanContext(Span span, Tracer.SpanInScope scope) {
     }
 }

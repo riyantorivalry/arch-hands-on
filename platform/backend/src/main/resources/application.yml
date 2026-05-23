@@ -138,7 +138,7 @@ platform:
     db:
       slow-query-threshold-ms: ${PLATFORM_OBSERVABILITY_DB_SLOW_QUERY_THRESHOLD_MS:250}
     profiling:
-      enabled: ${PYROSCOPE_AGENT_ENABLED:false}
+      enabled: ${PYROSCOPE_AGENT_ENABLED:true}
       application-name: ${PYROSCOPE_APPLICATION_NAME:${spring.application.name}}
       server-address: ${PYROSCOPE_SERVER_ADDRESS:http://localhost:4040}
       environment: ${PLATFORM_ENVIRONMENT:local}

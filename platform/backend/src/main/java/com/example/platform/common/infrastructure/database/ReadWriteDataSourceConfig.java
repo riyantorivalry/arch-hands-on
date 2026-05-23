@@ -3,10 +3,12 @@ package com.example.platform.common.infrastructure.database;
 import com.zaxxer.hikari.HikariDataSource;
 import com.example.platform.common.infrastructure.observability.DatabaseQueryMetricsListener;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.Tracer;
 import java.util.HashMap;
 import java.util.Map;
 import javax.sql.DataSource;
 import net.ttddyy.dsproxy.support.ProxyDataSourceBuilder;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -27,7 +29,7 @@ public class ReadWriteDataSourceConfig {
 
     @Bean
     @Primary
-    public DataSource dataSource(MeterRegistry meterRegistry) {
+    public DataSource dataSource(MeterRegistry meterRegistry, ObjectProvider<Tracer> tracerProvider) {
         DataSourceProperties defaultProperties = bindOrDefault("spring.datasource");
         DataSourceProperties masterProperties = bindOrDefault("spring.datasource.master");
         DataSourceProperties replicaProperties = bindOrDefault("spring.datasource.replica");
@@ -37,7 +39,7 @@ public class ReadWriteDataSourceConfig {
                 250L
         );
         DatabaseQueryMetricsListener queryMetricsListener =
-                new DatabaseQueryMetricsListener(meterRegistry, slowQueryThresholdMs);
+                new DatabaseQueryMetricsListener(meterRegistry, slowQueryThresholdMs, tracerProvider.getIfAvailable());
 
         HikariDataSource writeDataSource = buildDataSource(masterProperties, defaultProperties, "spring.datasource.master.hikari");
         HikariDataSource readDataSource = buildReadDataSource(replicaProperties, writeDataSource);

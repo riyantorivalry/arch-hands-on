@@ -2,3 +2,8 @@ management:
   tracing:
     sampling:
       probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:0.10}
+
+platform:
+  observability:
+    profiling:
+      enabled: ${PYROSCOPE_AGENT_ENABLED:false}

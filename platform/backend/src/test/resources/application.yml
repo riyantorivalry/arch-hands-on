@@ -15,6 +15,9 @@ spring:
     locations: classpath:db/migration
 
 platform:
+  observability:
+    profiling:
+      enabled: false
   feature:
     cache:
       mode: caffeine

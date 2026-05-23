@@ -245,8 +245,14 @@ Complete observability infrastructure is included:
 ### Distributed Tracing
 - **Correlation IDs**: Track requests across the system
 - **Trace IDs**: X-Trace-ID header for distributed tracing
+- **Application spans**: Controller, service/facade, repository, and processor methods emit child spans
+- **JDBC spans**: Datasource-proxy emits query spans with datasource, operation, statement type, query preview, success, and duration tags
 - **MDC Context**: Automatic inclusion of context in all logs
 - **Multi-tenant support**: Tenant ID tracking
+
+### Continuous Profiling
+- **Pyroscope profiling**: Local/default runs enable the Pyroscope Java profiler by default for CPU flamegraphs
+- **Production opt-in**: The `prod` profile keeps profiling disabled unless `PYROSCOPE_AGENT_ENABLED=true` is set
 
 ### Health Checks
 - REST endpoints for liveness and readiness probes
