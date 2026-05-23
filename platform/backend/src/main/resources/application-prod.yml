@@ -1,0 +1,4 @@
+platform:
+  observability:
+    profiling:
+      enabled: ${PYROSCOPE_AGENT_ENABLED:false}

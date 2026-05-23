@@ -66,6 +66,7 @@ services:
       - prometheus
       - loki
       - tempo
+      - pyroscope
     restart: unless-stopped
 
   loki:
@@ -89,6 +90,7 @@ services:
     volumes:
       - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
       - ../logs:/var/log/platform:ro
+      - ../../../logs:/var/log/platform-root:ro
       - alloy-data:/var/lib/alloy
     ports:
       - "12345:12345"
@@ -131,43 +133,20 @@ services:
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     ports:
       - "3200:3200"   # Tempo query/http
-      - "9411:9411"   # Zipkin receiver
     volumes:
       - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - tempo-data:/var/tempo
     restart: unless-stopped
 
-  opensearch:
-    image: opensearchproject/opensearch:2.8.0
-    container_name: observability_opensearch
-    environment:
-      - discovery.type=single-node
-      - plugins.security.disabled=true
-      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+  pyroscope:
+    image: ${PYROSCOPE_IMAGE:-grafana/pyroscope:2.0.1}
+    container_name: observability_pyroscope
+    command:
+      - server
     ports:
-      - "9200:9200"   # OpenSearch API
-      - "9600:9600"   # Performance Analyzer
+      - "4040:4040"
     volumes:
-      - opensearch-data:/usr/share/opensearch/data
-    restart: unless-stopped
-
-  opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:2.8.0
-    container_name: observability_opensearch_dashboards
-    ports:
-      - "5601:5601"   # Dashboard UI
-    environment:
-      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
-    depends_on:
-      - opensearch
-    restart: unless-stopped
-
-  toxiproxy:
-    image: shopify/toxiproxy:2.1.4
-    container_name: observability_toxiproxy
-    ports:
-      - "8474:8474"   # Toxiproxy REST API
-      - "9201:9201"   # OpenSearch proxy for host-based backend traffic
+      - pyroscope-data:/var/lib/pyroscope
     restart: unless-stopped
 
 volumes:
@@ -177,7 +156,7 @@ volumes:
   alloy-data:
   alertmanager-data:
   tempo-data:
-  opensearch-data:
+  pyroscope-data:
 
 
 

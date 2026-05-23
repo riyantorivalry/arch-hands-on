@@ -6,79 +6,444 @@
         "datasource": "-- Grafana --",
         "enable": true,
         "hide": true,
-        "iconColor": "#000000",
+        "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
       }
     ]
   },
   "editable": true,
-  "gnetId": null,
-  "graphTooltip": 0,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Explore Logs",
+      "tooltip": "Open Loki logs for platform-backend",
+      "type": "link",
+      "url": "/explore?schemaVersion=1&panes=%7B%22logs%22:%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22%7Bservice_name%3D%5C%22platform-backend%5C%22%7D%22%7D%5D,%22range%22:%7B%22from%22:%22now-1h%22,%22to%22:%22now%22%7D%7D%7D"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Explore Traces",
+      "tooltip": "Open Tempo Explore",
+      "type": "link",
+      "url": "/explore?schemaVersion=1&panes=%7B%22traces%22:%7B%22datasource%22:%22tempo%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22queryType%22:%22traceql%22,%22query%22:%22%7Bresource.service.name%3D%5C%22platform-backend%5C%22%7D%22%7D%5D,%22range%22:%7B%22from%22:%22now-1h%22,%22to%22:%22now%22%7D%7D%7D"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Explore Profiles",
+      "tooltip": "Open Pyroscope profiles",
+      "type": "link",
+      "url": "/explore?schemaVersion=1&panes=%7B%22profiles%22:%7B%22datasource%22:%22pyroscope%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22labelSelector%22:%22%7Bservice_name%3D%5C%22platform-backend%5C%22%7D%22%7D%5D,%22range%22:%7B%22from%22:%22now-1h%22,%22to%22:%22now%22%7D%7D%7D"
+    }
+  ],
+  "liveNow": false,
   "panels": [
     {
-      "datasource": "Prometheus",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Whether Prometheus can scrape the backend.",
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "mappings": [
+            {"options": {"0": {"text": "DOWN"}, "1": {"text": "UP"}}, "type": "value"}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 1}
+            ]
+          },
+          "unit": "short"
+        },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "max(up{job=\"platform-backend\"})", "refId": "A"}],
+      "title": "Backend Health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "All non-actuator backend traffic.",
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
       "id": 2,
-      "options": {},
-      "targets": [
-        {
-          "expr": "sum(rate(tasks_created_total[5m]))",
-          "legendFormat": "tasks created (r/s)",
-          "refId": "A"
-        }
-      ],
-      "title": "Tasks Created Rate",
-      "type": "timeseries"
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "sum(rate(http_server_requests_seconds_count{job=\"platform-backend\",uri!~\"/actuator.*\"}[$__rate_interval]))", "refId": "A"}],
+      "title": "Request Rate",
+      "type": "stat"
     },
     {
-      "datasource": "Prometheus",
-      "fieldConfig": {"defaults": {}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "5xx percentage across user-facing APIs.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]},
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "100 * sum(rate(http_server_requests_seconds_count{job=\"platform-backend\",status=~\"5..\",uri!~\"/actuator.*\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"platform-backend\",uri!~\"/actuator.*\"}[$__rate_interval])), 0.001)", "refId": "A"}],
+      "title": "5xx Error Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "p95 request latency for non-actuator traffic.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 500}, {"color": "red", "value": 1000}]},
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
       "id": 4,
-      "options": {},
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "1000 * histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"platform-backend\",uri!~\"/actuator.*\"}[$__rate_interval])) by (le))", "refId": "A"}],
+      "title": "p95 Latency",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Unpublished outbox events waiting for delivery.",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 50}, {"color": "red", "value": 100}]},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+      "id": 5,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "max(outbox_unpublished_events{job=\"platform-backend\"})", "refId": "A"}],
+      "title": "Outbox Backlog",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Process CPU used by backend JVM.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 70}, {"color": "red", "value": 85}]},
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+      "id": 6,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "100 * process_cpu_usage{job=\"platform-backend\"}", "refId": "A"}],
+      "title": "Backend CPU",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 4},
+      "id": 7,
+      "panels": [],
+      "title": "User-Facing Product Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 5},
+      "id": 8,
+      "options": {"displayMode": "gradient", "maxVizHeight": 300, "minVizHeight": 16, "minVizWidth": 8, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "valueMode": "color"},
+      "targets": [{"expr": "platform_user_facing_total{job=\"platform-backend\"}", "legendFormat": "{{entity}}", "refId": "A"}],
+      "title": "Current Entity Totals",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "eps"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 5},
+      "id": 9,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {
-          "expr": "sum(rate(http_server_requests_seconds_count{job=\"platform-backend\"}[5m])) by (uri)",
-          "legendFormat": "{{uri}}",
-          "refId": "A"
-        }
+        {"expr": "sum(rate(tasks_created_total{job=\"platform-backend\"}[$__rate_interval]))", "legendFormat": "tasks created", "refId": "A"},
+        {"expr": "sum(rate(documents_uploaded_total{job=\"platform-backend\"}[$__rate_interval]))", "legendFormat": "documents uploaded", "refId": "B"},
+        {"expr": "sum(rate(documents_accessed_total{job=\"platform-backend\"}[$__rate_interval]))", "legendFormat": "documents accessed", "refId": "C"},
+        {"expr": "sum(rate(sessions_created_total{job=\"platform-backend\"}[$__rate_interval]))", "legendFormat": "sessions created", "refId": "D"}
       ],
-      "title": "HTTP Request Rate by URI",
+      "title": "Product Activity Rate",
       "type": "timeseries"
     },
     {
-      "datasource": "Prometheus",
-      "fieldConfig": {"defaults": {}, "overrides": []},
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
-      "id": 6,
-      "options": {},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 5},
+      "id": 10,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
       "targets": [
-        {
-          "expr": "sum(increase(events_published_total{job=\"platform-backend\"}[$__rate_interval]))",
-          "legendFormat": "events published",
-          "refId": "A"
-        }
+        {"expr": "sum(rate(events_published_total{job=\"platform-backend\"}[$__rate_interval]))", "legendFormat": "published", "refId": "A"},
+        {"expr": "sum(rate(events_failed_total{job=\"platform-backend\"}[$__rate_interval]))", "legendFormat": "failed", "refId": "B"},
+        {"expr": "sum(rate(collaboration_events_total{job=\"platform-backend\"}[$__rate_interval]))", "legendFormat": "collaboration", "refId": "C"}
       ],
-      "title": "Events Published",
+      "title": "Events Overview",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 11},
+      "id": 11,
+      "panels": [],
+      "title": "API Reliability And Latency",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 12},
+      "id": 12,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (method, uri) (rate(http_server_requests_seconds_count{job=\"platform-backend\",uri!~\"/actuator.*\"}[$__rate_interval]))", "legendFormat": "{{method}} {{uri}}", "refId": "A"}],
+      "title": "Request Rate By API",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 12},
+      "id": 13,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum by (method, uri, status) (rate(http_server_requests_seconds_count{job=\"platform-backend\",status=~\"4..|5..\",uri!~\"/actuator.*\"}[$__rate_interval]))", "legendFormat": "{{method}} {{uri}} {{status}}", "refId": "A"}
+      ],
+      "title": "Failed API Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12},
+      "id": 14,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "1000 * histogram_quantile(0.95, sum by (le, method, uri) (rate(http_server_requests_seconds_bucket{job=\"platform-backend\",uri!~\"/actuator.*\"}[$__rate_interval])))", "legendFormat": "p95 {{method}} {{uri}}", "refId": "A"},
+        {"expr": "1000 * histogram_quantile(0.99, sum by (le, method, uri) (rate(http_server_requests_seconds_bucket{job=\"platform-backend\",uri!~\"/actuator.*\"}[$__rate_interval])))", "legendFormat": "p99 {{method}} {{uri}}", "refId": "B"}
+      ],
+      "title": "High Latency APIs",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": false}, "decimals": 4, "unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 20},
+      "id": 15,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true},
+      "targets": [{"expr": "topk(10, sum by (method, uri, status) (rate(http_server_requests_seconds_count{job=\"platform-backend\",status=~\"4..|5..\",uri!~\"/actuator.*\"}[$__rate_interval])))", "format": "table", "instant": true, "refId": "A"}],
+      "title": "Top Failed APIs",
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}, "renameByName": {"Value": "failures/sec"}}}],
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": false}, "decimals": 0, "unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 20},
+      "id": 16,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true},
+      "targets": [{"expr": "topk(10, 1000 * histogram_quantile(0.95, sum by (le, method, uri) (rate(http_server_requests_seconds_bucket{job=\"platform-backend\",uri!~\"/actuator.*\"}[$__rate_interval]))))", "format": "table", "instant": true, "refId": "A"}],
+      "title": "Slowest APIs p95",
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}, "renameByName": {"Value": "p95 latency"}}}],
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 27},
+      "id": 17,
+      "panels": [],
+      "title": "Compute And JVM Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 1, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 28},
+      "id": 18,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "100 * process_cpu_usage{job=\"platform-backend\"}", "legendFormat": "process", "refId": "A"},
+        {"expr": "100 * system_cpu_usage{job=\"platform-backend\"}", "legendFormat": "system", "refId": "B"}
+      ],
+      "title": "CPU Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 1, "unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 28},
+      "id": 19,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum by (area) (jvm_memory_used_bytes{job=\"platform-backend\"})", "legendFormat": "{{area}} used", "refId": "A"},
+        {"expr": "sum by (area) (jvm_memory_max_bytes{job=\"platform-backend\"})", "legendFormat": "{{area}} max", "refId": "B"}
+      ],
+      "title": "JVM Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 3, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 28},
+      "id": 20,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (cause, action) (rate(jvm_gc_pause_seconds_sum{job=\"platform-backend\"}[$__rate_interval]))", "legendFormat": "{{action}} {{cause}}", "refId": "A"}],
+      "title": "GC Pause Time",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 35},
+      "id": 21,
+      "panels": [],
+      "title": "Database Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 36},
+      "id": 22,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "hikaricp_connections_active{job=\"platform-backend\"}", "legendFormat": "{{pool}} active", "refId": "A"},
+        {"expr": "hikaricp_connections_idle{job=\"platform-backend\"}", "legendFormat": "{{pool}} idle", "refId": "B"},
+        {"expr": "hikaricp_connections_pending{job=\"platform-backend\"}", "legendFormat": "{{pool}} pending", "refId": "C"}
+      ],
+      "title": "Application JDBC Pool",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 36},
+      "id": 23,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum by (role) (rate(pg_stat_database_xact_commit{datname=\"platform\"}[$__rate_interval]))", "legendFormat": "{{role}} commit", "refId": "A"},
+        {"expr": "sum by (role) (rate(pg_stat_database_xact_rollback{datname=\"platform\"}[$__rate_interval]))", "legendFormat": "{{role}} rollback", "refId": "B"}
+      ],
+      "title": "PostgreSQL Transactions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 1, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 36},
+      "id": 24,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "100 * sum by (role, datname) (rate(pg_stat_database_blks_hit{datname=\"platform\"}[$__rate_interval])) / clamp_min(sum by (role, datname) (rate(pg_stat_database_blks_hit{datname=\"platform\"}[$__rate_interval]) + rate(pg_stat_database_blks_read{datname=\"platform\"}[$__rate_interval])), 1)", "legendFormat": "{{role}}", "refId": "A"}],
+      "title": "PostgreSQL Cache Hit Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 43},
+      "id": 25,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "pg_stat_database_numbackends{datname=\"platform\"}", "legendFormat": "{{role}} active backends", "refId": "A"}],
+      "title": "PostgreSQL Active Connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 43},
+      "id": 26,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "increase(pg_stat_database_deadlocks{datname=\"platform\"}[$__rate_interval])", "legendFormat": "{{role}} deadlocks", "refId": "A"},
+        {"expr": "increase(pg_stat_database_conflicts{datname=\"platform\"}[$__rate_interval])", "legendFormat": "{{role}} conflicts", "refId": "B"}
+      ],
+      "title": "PostgreSQL Deadlocks And Conflicts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 43},
+      "id": 27,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (role, mode) (pg_locks_count{datname=\"platform\"})", "legendFormat": "{{role}} {{mode}}", "refId": "A"}],
+      "title": "PostgreSQL Locks",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 50},
+      "id": 28,
+      "panels": [],
+      "title": "Events, Logs, Traces, Profiles",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 51},
+      "id": 29,
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "targets": [{"datasource": {"type": "loki", "uid": "loki"}, "expr": "{service_name=\"platform-backend\"}", "refId": "A"}],
+      "title": "Recent Application Logs",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Agent-exported server span metrics when the OpenTelemetry Java agent metrics exporter is enabled.",
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 51},
+      "id": 30,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum by (http_request_method, url_template, http_response_status_code) (rate(http_server_request_duration_seconds_count{job=\"otel-javaagent\"}[$__rate_interval]))", "legendFormat": "{{http_request_method}} {{url_template}} {{http_response_status_code}}", "refId": "A"}
+      ],
+      "title": "OTel Agent HTTP Span Metrics",
       "type": "timeseries"
     }
   ],
-  "refresh": "10s",
-  "schemaVersion": 36,
+  "refresh": "30s",
+  "schemaVersion": 39,
   "style": "dark",
-  "tags": ["platform", "observability"],
-  "templating": {"list": []},
-  "time": {"from": "now-1h", "to": "now"},
-  "timepicker": {},
+  "tags": ["platform", "production", "pim", "observability"],
+  "templating": {
+    "list": []
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {
+    "refresh_intervals": ["10s", "30s", "1m", "5m"],
+    "time_options": ["1h", "6h", "12h", "24h", "7d"]
+  },
   "timezone": "browser",
-  "title": "Platform Backend - Observability",
-  "version": 1
+  "title": "Platform Production Overview",
+  "uid": "platform-production-overview",
+  "version": 1,
+  "weekStart": ""
 }
-

@@ -1,7 +1,7 @@
 package com.example.platform.common.infrastructure.observability;
 
-import io.micrometer.tracing.Span;
-import io.micrometer.tracing.Tracer;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -40,9 +40,6 @@ public class ObservabilityFilter extends OncePerRequestFilter {
 
     @Autowired(required = false)
     private BusinessMetricsCollector metricsCollector;
-
-    @Autowired(required = false)
-    private Tracer tracer;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -104,14 +101,9 @@ public class ObservabilityFilter extends OncePerRequestFilter {
     }
 
     private String getOrCreateTraceId(HttpServletRequest request) {
-        if (tracer != null) {
-            Span currentSpan = tracer.currentSpan();
-            if (currentSpan != null && currentSpan.context() != null) {
-                String traceId = currentSpan.context().traceId();
-                if (traceId != null && !traceId.isBlank()) {
-                    return traceId;
-                }
-            }
+        SpanContext currentContext = Span.current().getSpanContext();
+        if (currentContext.isValid()) {
+            return currentContext.getTraceId();
         }
 
         String traceId = request.getHeader(TRACE_ID_HEADER);

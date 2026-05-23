@@ -55,7 +55,15 @@ scrape_configs:
     static_configs:
       - targets:
           - 'otel-collector:8888'
+
+  - job_name: 'otel-javaagent'
+    static_configs:
+      - targets:
           - 'otel-collector:8889'
+
+  - job_name: 'pyroscope'
+    static_configs:
+      - targets: ['pyroscope:4040']
 
   - job_name: 'alloy'
     static_configs:

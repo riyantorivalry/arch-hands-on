@@ -122,17 +122,19 @@ management:
       jvm: true
       process: true
       system: true
-  tracing:
-    sampling:
-      probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:0.10}
-  otlp:
-    tracing:
-      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
-
 server:
   shutdown: graceful
 
 platform:
+  observability:
+    profiling:
+      enabled: ${PYROSCOPE_AGENT_ENABLED:false}
+      application-name: ${PYROSCOPE_APPLICATION_NAME:${spring.application.name}}
+      server-address: ${PYROSCOPE_SERVER_ADDRESS:http://localhost:4040}
+      environment: ${PLATFORM_ENVIRONMENT:local}
+      region: ${PLATFORM_REGION:local}
+      alloc: ${PYROSCOPE_PROFILER_ALLOC:}
+      lock: ${PYROSCOPE_PROFILER_LOCK:10ms}
   feature:
     cache:
       mode: ${PLATFORM_FEATURE_CACHE_MODE:caffeine}

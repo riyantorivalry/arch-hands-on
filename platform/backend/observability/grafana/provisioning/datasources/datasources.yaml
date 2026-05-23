@@ -23,7 +23,7 @@ datasources:
       maxLines: 1000
       derivedFields:
         - name: TraceID
-          matcherRegex: '"traceId":"([a-f0-9]+)"'
+          matcherRegex: '"trace(?:Id|_id)":"([a-f0-9]+)"'
           datasourceUid: tempo
           url: '$${__value.raw}'
 
@@ -44,3 +44,10 @@ datasources:
             value: service_name
       tracesToMetrics:
         datasourceUid: prometheus
+
+  - name: Pyroscope
+    uid: pyroscope
+    type: grafana-pyroscope-datasource
+    access: proxy
+    url: http://pyroscope:4040
+    editable: false

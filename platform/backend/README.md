@@ -10,9 +10,10 @@ This is the Java Spring Boot modular monolith for the collaboration platform. It
 - Spring Data JPA
 - PostgreSQL
 - Spring Boot Actuator
-- Micrometer Metrics & Tracing
+- Micrometer Metrics
 - Logback with JSON formatting
-- Micrometer Tracing with OpenTelemetry OTLP export
+- OpenTelemetry Java agent for automatic tracing and OTLP metrics export
+- Pyroscope for CPU flamegraphs
 
 ## Module layout
 
@@ -245,8 +246,14 @@ Complete observability infrastructure is included:
 ### Distributed Tracing
 - **Correlation IDs**: Track requests across the system
 - **Trace IDs**: X-Trace-ID header for distributed tracing
+- **Agent-first instrumentation**: The OpenTelemetry Java agent owns Spring MVC, JDBC, HTTP client, Redis, Kafka, and other supported library spans
+- **Domain spans**: The backend emits lightweight custom spans for application/service/facade methods through the OpenTelemetry API; these are no-op when the Java agent is not attached
 - **MDC Context**: Automatic inclusion of context in all logs
 - **Multi-tenant support**: Tenant ID tracking
+
+### Continuous Profiling
+- **Pyroscope flamegraphs**: Local profiling can be enabled with `PYROSCOPE_AGENT_ENABLED=true`
+- **Signal split**: Tempo is used for trace waterfalls; Pyroscope/Grafana is used for flamegraphs
 
 ### Health Checks
 - REST endpoints for liveness and readiness probes

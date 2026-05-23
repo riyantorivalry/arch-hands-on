@@ -34,6 +34,10 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+        <dependency>
             <groupId>jakarta.servlet</groupId>
             <artifactId>jakarta.servlet-api</artifactId>
             <scope>provided</scope>
@@ -112,14 +116,16 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- Observability: Distributed Tracing via OpenTelemetry OTLP -->
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-tracing-bridge-otel</artifactId>
-        </dependency>
+        <!-- Observability: OpenTelemetry API for custom domain spans.
+             The OpenTelemetry Java agent provides SDK/exporters/instrumentation at runtime. -->
         <dependency>
             <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-exporter-otlp</artifactId>
+            <artifactId>opentelemetry-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.pyroscope</groupId>
+            <artifactId>agent</artifactId>
+            <version>2.1.2</version>
         </dependency>
 
         <!-- Observability: Metrics & Monitoring -->

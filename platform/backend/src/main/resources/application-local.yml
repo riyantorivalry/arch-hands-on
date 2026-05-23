@@ -24,6 +24,9 @@ management:
         include: health,info,metrics,prometheus
 
 platform:
+  observability:
+    profiling:
+      enabled: ${PYROSCOPE_AGENT_ENABLED:true}
   event-publishing:
     kafka:
       enabled: false  # Disable Kafka for local development
