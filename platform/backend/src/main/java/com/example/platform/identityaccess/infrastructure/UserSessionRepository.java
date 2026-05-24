@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface UserSessionRepository extends JpaRepository<UserSessionEntity, String> {
 
     Optional<UserSessionEntity> findBySessionToken(String sessionToken);
+
+    Optional<UserSessionEntity> findByRefreshTokenHash(String refreshTokenHash);
 }

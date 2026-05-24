@@ -78,6 +78,28 @@ The backend supports read/write datasource routing:
 
 Local primary-replica setup is documented in [PostgreSQL primary-replica setup](../../docs/runbooks/postgres-read-replica.md).
 
+## Authentication Sessions
+
+Login issues a short-lived signed JWT access token and an opaque refresh token:
+
+```text
+POST /api/auth/login
+POST /api/auth/refresh
+POST /api/auth/logout
+```
+
+Access tokens are verified cryptographically and then checked against the persisted `user_sessions` row through the JWT `sid` claim, so session revocation takes effect immediately. Refresh tokens are stored only as SHA-256 hashes and are rotated on every refresh. Configure signing and token lifetimes with:
+
+```text
+PLATFORM_AUTH_JWT_SECRET (required outside local/test)
+PLATFORM_AUTH_JWT_ACCESS_TOKEN_TTL
+PLATFORM_AUTH_JWT_REFRESH_TOKEN_TTL
+PLATFORM_AUTH_JWT_ISSUER
+PLATFORM_AUTH_JWT_AUDIENCE
+```
+
+`LoginRequest.clientId` and `LoginRequest.clientType` (`WEB`, `MOBILE`, `FHIR`, `SERVICE`) are persisted with each session for future client-specific authentication behavior.
+
 Example config:
 
 ```yaml

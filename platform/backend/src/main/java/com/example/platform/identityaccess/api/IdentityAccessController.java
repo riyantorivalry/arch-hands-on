@@ -2,6 +2,7 @@ package com.example.platform.identityaccess.api;
 
 import com.example.platform.common.web.RequestContextResponse;
 import com.example.platform.common.web.RequestContexts;
+import com.example.platform.identityaccess.application.AuthenticationClient;
 import com.example.platform.identityaccess.application.IdentityAccessFacade;
 import com.example.platform.identityaccess.application.SessionAuthenticationService;
 import jakarta.validation.constraints.NotBlank;
@@ -28,14 +29,18 @@ public class IdentityAccessController {
 
     @PostMapping("/auth/login")
     public LoginResponse login(@RequestBody LoginRequest request) {
-        var session = sessionAuthenticationService.login(request.userId(), request.workspaceId());
-        return new LoginResponse(
-                session.token(),
-                session.userId(),
-                session.tenantId(),
-                session.workspaceId(),
-                session.expiresAt().toString()
+        var session = sessionAuthenticationService.login(
+                request.userId(),
+                request.workspaceId(),
+                new AuthenticationClient(request.clientId(), request.clientType())
         );
+        return LoginResponse.from(session);
+    }
+
+    @PostMapping("/auth/refresh")
+    public LoginResponse refresh(@RequestBody RefreshRequest request) {
+        var session = sessionAuthenticationService.refresh(request.refreshToken());
+        return LoginResponse.from(session);
     }
 
     @PostMapping("/auth/logout")
@@ -81,10 +86,50 @@ public class IdentityAccessController {
         );
     }
 
-    public record LoginRequest(@NotBlank String userId, @NotBlank String workspaceId) {
+    public record LoginRequest(
+            @NotBlank String userId,
+            @NotBlank String workspaceId,
+            String clientId,
+            AuthenticationClient.ClientType clientType
+    ) {
     }
 
-    public record LoginResponse(String token, String userId, String tenantId, String workspaceId, String expiresAt) {
+    public record RefreshRequest(@NotBlank String refreshToken) {
+    }
+
+    public record LoginResponse(
+            String token,
+            String accessToken,
+            String refreshToken,
+            String tokenType,
+            long expiresIn,
+            String sessionId,
+            String userId,
+            String tenantId,
+            String workspaceId,
+            String clientId,
+            String clientType,
+            String expiresAt,
+            String refreshExpiresAt
+    ) {
+        private static LoginResponse from(SessionAuthenticationService.AuthenticatedSession session) {
+            var tokens = session.tokens();
+            return new LoginResponse(
+                    tokens.accessToken(),
+                    tokens.accessToken(),
+                    tokens.refreshToken(),
+                    tokens.tokenType(),
+                    tokens.expiresIn(),
+                    session.sessionId(),
+                    session.userId(),
+                    session.tenantId(),
+                    session.workspaceId(),
+                    session.clientId(),
+                    session.clientType(),
+                    tokens.accessTokenExpiresAt().toString(),
+                    tokens.refreshTokenExpiresAt().toString()
+            );
+        }
     }
 
     public record LogoutResponse(String status) {
@@ -112,7 +157,7 @@ public class IdentityAccessController {
     }
 
     private String extractToken(String authorization) {
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
+        if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
             throw new com.example.platform.common.web.AuthenticationRequiredException("Bearer token is required");
         }
         return authorization.substring("Bearer ".length()).trim();

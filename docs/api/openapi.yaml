@@ -594,7 +594,7 @@ paths:
     post:
       tags:
         - Identity Access
-      summary: Create a user session for a workspace.
+      summary: Create a JWT-backed user session for a workspace.
       operationId: login
       security: []
       parameters:
@@ -607,7 +607,7 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Login result with bearer token.
+          description: Login result with access and refresh tokens.
           headers:
             X-Correlation-Id:
               $ref: "#/components/headers/CorrelationId"
@@ -617,6 +617,34 @@ paths:
                 $ref: "#/components/schemas/LoginResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+
+  /api/auth/refresh:
+    post:
+      tags:
+        - Identity Access
+      summary: Rotate a refresh token and issue a new access token.
+      operationId: refreshSession
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Refreshed access and refresh tokens.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/auth/logout:
     post:
@@ -1547,17 +1575,62 @@ components:
         workspaceId:
           type: string
           minLength: 1
+        clientId:
+          type: string
+          description: Stable client identifier. Defaults to web.
+          example: web
+        clientType:
+          type: string
+          enum:
+            - WEB
+            - MOBILE
+            - FHIR
+            - SERVICE
+          default: WEB
+
+    RefreshRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+          minLength: 1
 
     LoginResponse:
       type: object
       required:
         - token
+        - accessToken
+        - refreshToken
+        - tokenType
+        - expiresIn
+        - sessionId
         - userId
         - tenantId
         - workspaceId
+        - clientId
+        - clientType
         - expiresAt
+        - refreshExpiresAt
       properties:
         token:
+          type: string
+          description: Backward-compatible alias for accessToken.
+        accessToken:
+          type: string
+          description: Signed JWT access token.
+        refreshToken:
+          type: string
+          description: Opaque refresh token. Store securely; it is rotated on refresh.
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          description: Access token lifetime in seconds.
+        sessionId:
           type: string
         userId:
           type: string
@@ -1565,7 +1638,19 @@ components:
           type: string
         workspaceId:
           type: string
+        clientId:
+          type: string
+        clientType:
+          type: string
+          enum:
+            - WEB
+            - MOBILE
+            - FHIR
+            - SERVICE
         expiresAt:
+          type: string
+          format: date-time
+        refreshExpiresAt:
           type: string
           format: date-time
 

@@ -15,6 +15,14 @@ spring:
     locations: classpath:db/migration
 
 platform:
+  auth:
+    jwt:
+      issuer: arch-hands-on-platform-test
+      audience: platform-api-test
+      secret: test-jwt-secret-minimum-32-bytes-long
+      access-token-ttl: 15m
+      refresh-token-ttl: 30d
+      clock-skew: 60s
   feature:
     cache:
       mode: caffeine

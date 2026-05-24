@@ -133,6 +133,14 @@ server:
   shutdown: graceful
 
 platform:
+  auth:
+    jwt:
+      issuer: ${PLATFORM_AUTH_JWT_ISSUER:arch-hands-on-platform}
+      audience: ${PLATFORM_AUTH_JWT_AUDIENCE:platform-api}
+      secret: ${PLATFORM_AUTH_JWT_SECRET:a3f19c7e2d8b4a91f6c3e5d728ab9041ce7d1f84b2a6953e0c8f7a1d4e6b9235}
+      access-token-ttl: ${PLATFORM_AUTH_JWT_ACCESS_TOKEN_TTL:15m}
+      refresh-token-ttl: ${PLATFORM_AUTH_JWT_REFRESH_TOKEN_TTL:30d}
+      clock-skew: ${PLATFORM_AUTH_JWT_CLOCK_SKEW:60s}
   feature:
     cache:
       mode: ${PLATFORM_FEATURE_CACHE_MODE:caffeine}

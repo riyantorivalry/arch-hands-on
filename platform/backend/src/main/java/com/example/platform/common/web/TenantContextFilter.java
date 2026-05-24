@@ -70,7 +70,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         }
 
         String authorization = request.getHeader(AUTHORIZATION_HEADER);
-        if (authorization == null || authorization.isBlank() || !authorization.startsWith("Bearer ")) {
+        if (authorization == null || authorization.isBlank() || !authorization.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
             throw new AuthenticationRequiredException("Bearer token is required");
         }
         String token = authorization.substring("Bearer ".length()).trim();
@@ -78,7 +78,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
     }
 
     private boolean isPublicEndpoint(String path) {
-        return "/api/tenants".equals(path) || "/api/auth/login".equals(path);
+        return "/api/tenants".equals(path) || "/api/auth/login".equals(path) || "/api/auth/refresh".equals(path);
     }
 
     private String valueOrDash(String value) {

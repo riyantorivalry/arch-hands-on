@@ -24,6 +24,9 @@ management:
         include: health,info,metrics,prometheus
 
 platform:
+  auth:
+    jwt:
+      secret: ${PLATFORM_AUTH_JWT_SECRET:local-development-jwt-secret-minimum-32-bytes-do-not-use}
   event-publishing:
     kafka:
       enabled: false  # Disable Kafka for local development

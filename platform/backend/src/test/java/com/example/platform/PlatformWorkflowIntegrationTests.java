@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,11 +49,46 @@ class PlatformWorkflowIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value("user-alice"))
                 .andExpect(jsonPath("$.workspaceId").value("workspace-engineering"))
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.clientId").value("web"))
+                .andExpect(jsonPath("$.clientType").value("WEB"))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
         String token = JsonFieldExtractor.read(loginPayload, "token");
+        String refreshToken = JsonFieldExtractor.read(loginPayload, "refreshToken");
+        assertThat(token.split("\\.")).hasSize(3);
+        assertThat(refreshToken).isNotBlank();
+
+        String refreshedLoginPayload = mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refreshToken": "%s"
+                                }
+                                """.formatted(refreshToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value("user-alice"))
+                .andExpect(jsonPath("$.workspaceId").value("workspace-engineering"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String refreshedToken = JsonFieldExtractor.read(refreshedLoginPayload, "token");
+        mockMvc.perform(get("/api/me")
+                        .header("Authorization", "Bearer " + refreshedToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value("user-alice"));
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refreshToken": "%s"
+                                }
+                                """.formatted(refreshToken)))
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(post("/api/workspaces/workspace-engineering/memberships")
                         .header("Authorization", "Bearer " + token)
