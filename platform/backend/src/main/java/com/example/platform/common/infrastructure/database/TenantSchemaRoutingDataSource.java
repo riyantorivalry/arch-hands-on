@@ -11,37 +11,40 @@ public class TenantSchemaRoutingDataSource extends AbstractDataSource {
 
     private final DataSource delegate;
     private final TenantSchemaNameResolver schemaNameResolver;
-    private final String defaultSchema;
 
     public TenantSchemaRoutingDataSource(
             DataSource delegate,
-            TenantSchemaNameResolver schemaNameResolver,
-            String defaultSchema
+            TenantSchemaNameResolver schemaNameResolver
     ) {
         this.delegate = delegate;
         this.schemaNameResolver = schemaNameResolver;
-        this.defaultSchema = defaultSchema;
     }
 
     @Override
     public Connection getConnection() throws SQLException {
         Connection connection = delegate.getConnection();
-        connection.setSchema(currentSchema());
-        return connection;
+        return applyCurrentTenantSchema(connection);
     }
 
     @Override
     public Connection getConnection(String username, String password) throws SQLException {
         Connection connection = delegate.getConnection(username, password);
-        connection.setSchema(currentSchema());
+        return applyCurrentTenantSchema(connection);
+    }
+
+    private Connection applyCurrentTenantSchema(Connection connection) throws SQLException {
+        String schema = currentTenantSchema();
+        if (schema != null) {
+            connection.setSchema(schema);
+        }
         return connection;
     }
 
-    private String currentSchema() {
+    private String currentTenantSchema() {
         return RequestContextHolder.get()
                 .map(RequestContext::tenantId)
                 .filter(tenantId -> !tenantId.isBlank())
                 .map(schemaNameResolver::schemaForTenant)
-                .orElse(defaultSchema);
+                .orElse(null);
     }
 }

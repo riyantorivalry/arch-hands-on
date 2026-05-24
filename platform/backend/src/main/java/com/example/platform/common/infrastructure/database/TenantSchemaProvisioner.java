@@ -61,7 +61,7 @@ public class TenantSchemaProvisioner {
     private void createSchema(String schemaName) {
         try (Connection connection = dataSource.getConnection();
              Statement statement = connection.createStatement()) {
-            statement.execute("create schema if not exists " + schemaName);
+            statement.execute("create schema if not exists " + quoteIdentifier(schemaName));
         } catch (SQLException exception) {
             throw new IllegalStateException("Failed to create tenant schema " + schemaName, exception);
         }
@@ -86,36 +86,40 @@ public class TenantSchemaProvisioner {
     }
 
     private void copyTenant(String tenantSchema, String tenantId) {
+        String quotedTenantSchema = quoteIdentifier(tenantSchema);
         jdbcTemplate.update("""
                 insert into %s.tenants (tenant_id, name, status, plan_code, created_at, updated_at)
                 select tenant_id, name, status, plan_code, created_at, updated_at
                 from %s.tenants source
                 where source.tenant_id = ?
                   and not exists (select 1 from %s.tenants target where target.tenant_id = source.tenant_id)
-                """.formatted(tenantSchema, defaultSchema, tenantSchema), tenantId);
+                """.formatted(quotedTenantSchema, defaultSchema, quotedTenantSchema), tenantId);
     }
 
     private void copyWorkspace(String tenantSchema, String workspaceId) {
+        String quotedTenantSchema = quoteIdentifier(tenantSchema);
         jdbcTemplate.update("""
                 insert into %s.workspaces (workspace_id, tenant_id, name, status, created_at, updated_at)
                 select workspace_id, tenant_id, name, status, created_at, updated_at
                 from %s.workspaces source
                 where source.workspace_id = ?
                   and not exists (select 1 from %s.workspaces target where target.workspace_id = source.workspace_id)
-                """.formatted(tenantSchema, defaultSchema, tenantSchema), workspaceId);
+                """.formatted(quotedTenantSchema, defaultSchema, quotedTenantSchema), workspaceId);
     }
 
     private void copyUser(String tenantSchema, String ownerUserId) {
+        String quotedTenantSchema = quoteIdentifier(tenantSchema);
         jdbcTemplate.update("""
                 insert into %s.users (user_id, email, display_name, status, created_at, updated_at)
                 select user_id, email, display_name, status, created_at, updated_at
                 from %s.users source
                 where source.user_id = ?
                   and not exists (select 1 from %s.users target where target.user_id = source.user_id)
-                """.formatted(tenantSchema, defaultSchema, tenantSchema), ownerUserId);
+                """.formatted(quotedTenantSchema, defaultSchema, quotedTenantSchema), ownerUserId);
     }
 
     private void copyMembership(String tenantSchema, String workspaceId, String ownerUserId) {
+        String quotedTenantSchema = quoteIdentifier(tenantSchema);
         jdbcTemplate.update("""
                 insert into %s.workspace_memberships (tenant_id, workspace_id, user_id, role, status, created_at, updated_at)
                 select tenant_id, workspace_id, user_id, role, status, created_at, updated_at
@@ -125,10 +129,11 @@ public class TenantSchemaProvisioner {
                       select 1 from %s.workspace_memberships target
                       where target.workspace_id = source.workspace_id and target.user_id = source.user_id
                   )
-                """.formatted(tenantSchema, defaultSchema, tenantSchema), workspaceId, ownerUserId);
+                """.formatted(quotedTenantSchema, defaultSchema, quotedTenantSchema), workspaceId, ownerUserId);
     }
 
     private void copyWorkspaceSettings(String tenantSchema, String workspaceId) {
+        String quotedTenantSchema = quoteIdentifier(tenantSchema);
         jdbcTemplate.update("""
                 insert into %s.workspace_settings (
                     workspace_id,
@@ -152,7 +157,7 @@ public class TenantSchemaProvisioner {
                       select 1 from %s.workspace_settings target
                       where target.workspace_id = source.workspace_id
                   )
-                """.formatted(tenantSchema, defaultSchema, tenantSchema), workspaceId);
+                """.formatted(quotedTenantSchema, defaultSchema, quotedTenantSchema), workspaceId);
     }
 
     private void registerSchema(String tenantId, String tenantSchema) {
@@ -163,5 +168,12 @@ public class TenantSchemaProvisioner {
                     select 1 from %s.tenant_schema_registry registry where registry.tenant_id = ?
                 )
                 """.formatted(defaultSchema, defaultSchema), tenantId, tenantSchema, tenantId);
+    }
+
+    private String quoteIdentifier(String identifier) {
+        if (identifier == null || !identifier.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+            throw new IllegalArgumentException("Invalid database identifier: " + identifier);
+        }
+        return "\"" + identifier + "\"";
     }
 }

@@ -51,8 +51,7 @@ public class ReadWriteDataSourceConfig {
         if (isTenantSchemaMode()) {
             return new TenantSchemaRoutingDataSource(
                     routingDataSource,
-                    tenantSchemaNameResolver,
-                    environment.getProperty("platform.tenancy.tenant-schema.default-schema", "public")
+                    tenantSchemaNameResolver
             );
         }
         return routingDataSource;
